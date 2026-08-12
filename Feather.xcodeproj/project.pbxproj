@@ -25,7 +25,7 @@
 
 /* Begin PBXFileReference section */
 		336D43972DB7454A00206400 /* MobileCoreServices.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MobileCoreServices.framework; path = Platforms/AppleTVOS.platform/Developer/SDKs/AppleTVOS18.2.sdk/System/Library/Frameworks/MobileCoreServices.framework; sourceTree = DEVELOPER_DIR; };
-		3379C1B92DA869A1004372DA /* Feather.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Feather.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		3379C1B92DA869A1004372DA /* Zinstall.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Zinstall.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		570920BD2F98A4F0008C4A83 /* Feather.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Feather.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -36,7 +36,7 @@
 				Resources/ellekit.deb,
 				Resources/Info.plist,
 			);
-			target = 3379C1B82DA869A1004372DA /* Feather */;
+			target = 3379C1B82DA869A1004372DA /* Z install */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -107,7 +107,7 @@
 		3379C1BA2DA869A1004372DA /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				3379C1B92DA869A1004372DA /* Feather.app */,
+				3379C1B92DA869A1004372DA /* Zinstall.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -115,9 +115,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		3379C1B82DA869A1004372DA /* Feather */ = {
+		3379C1B82DA869A1004372DA /* Z install */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 3379C1CD2DA869A3004372DA /* Build configuration list for PBXNativeTarget "Feather" */;
+			buildConfigurationList = 3379C1CD2DA869A3004372DA /* Build configuration list for PBXNativeTarget "Z install" */;
 			buildPhases = (
 				3379C1B52DA869A1004372DA /* Sources */,
 				3379C1B62DA869A1004372DA /* Frameworks */,
@@ -132,7 +132,7 @@
 			fileSystemSynchronizedGroups = (
 				3379C1BB2DA869A1004372DA /* Feather */,
 			);
-			name = Feather;
+			name = "Z install";
 			packageProductDependencies = (
 				3371F7312DA9ECDD00281AC6 /* Zip */,
 				33CF13382DB5ACFB0021D4C5 /* SWCompression */,
@@ -147,8 +147,8 @@
 				33693A072DC8BF5B00730215 /* AltSourceKit */,
 				3349E7662DEFB46F00E317ED /* IDeviceSwift */,
 			);
-			productName = Feather;
-			productReference = 3379C1B92DA869A1004372DA /* Feather.app */;
+			productName = "Z install";
+			productReference = 3379C1B92DA869A1004372DA /* Zinstall.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -167,7 +167,7 @@
 					};
 				};
 			};
-			buildConfigurationList = 3379C1B42DA869A1004372DA /* Build configuration list for PBXProject "Feather" */;
+			buildConfigurationList = 3379C1B42DA869A1004372DA /* Build configuration list for PBXProject "Z install" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -203,7 +203,7 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				3379C1B82DA869A1004372DA /* Feather */,
+				3379C1B82DA869A1004372DA /* Z install */,
 			);
 		};
 /* End PBXProject section */
@@ -232,7 +232,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "echo \"Will copy acknowledgements\"\n\nACKNOWLEDGEMENTS_DIR=${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/com.mono0926.LicensePlist.Output\nDESTINATION_PATH=${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Settings.bundle/\n\ncp -r \"${ACKNOWLEDGEMENTS_DIR}\"/thewonderofyou.Feather \"${DESTINATION_PATH}\"\ncp -r \"${ACKNOWLEDGEMENTS_DIR}\"/thewonderofyou.Feather.plist \"${DESTINATION_PATH}\"\nrm -rf \"${ACKNOWLEDGEMENTS_DIR}\"\n";
+			shellScript = "echo \"Will copy acknowledgements\"\n\nACKNOWLEDGEMENTS_DIR=${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/com.mono0926.LicensePlist.Output\nDESTINATION_PATH=${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Settings.bundle/\n\ncp -r \"${ACKNOWLEDGEMENTS_DIR}\"/com.z.install \"${DESTINATION_PATH}\" || true\ncp -r \"${ACKNOWLEDGEMENTS_DIR}\"/com.z.install.plist \"${DESTINATION_PATH}\" || true\nrm -rf \"${ACKNOWLEDGEMENTS_DIR}\"\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -397,7 +397,7 @@
 				);
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Feather/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Feather;
+				INFOPLIST_KEY_CFBundleDisplayName = "Z install";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright (c) 2024 Samara M";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -420,7 +420,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
 				MARKETING_VERSION = "$(FEATHER_PROJECT_VERSION)-debug";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FEATHER_PRODUCT_BUNDLE_IDENTIFIER)$(FEATHER_DISAMBIGUATOR)";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Zinstall;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = auto;
 				STRIP_INSTALLED_PRODUCT = NO;
@@ -461,7 +461,7 @@
 				GCC_PREPROCESSOR_DEFINITIONS = "";
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Feather/Resources/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Feather;
+				INFOPLIST_KEY_CFBundleDisplayName = "Z install";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright (c) 2024 Samara M";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -484,7 +484,7 @@
 				MACOSX_DEPLOYMENT_TARGET = 15.2;
 				MARKETING_VERSION = "$(FEATHER_PROJECT_VERSION)";
 				PRODUCT_BUNDLE_IDENTIFIER = "$(FEATHER_PRODUCT_BUNDLE_IDENTIFIER)";
-				PRODUCT_NAME = "$(TARGET_NAME)";
+				PRODUCT_NAME = Zinstall;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SDKROOT = auto;
 				STRIPFLAGS = "-rSTx";
@@ -505,7 +505,7 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		3379C1B42DA869A1004372DA /* Build configuration list for PBXProject "Feather" */ = {
+		3379C1B42DA869A1004372DA /* Build configuration list for PBXProject "Z install" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3379C1CB2DA869A3004372DA /* Debug */,
@@ -514,7 +514,7 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		3379C1CD2DA869A3004372DA /* Build configuration list for PBXNativeTarget "Feather" */ = {
+		3379C1CD2DA869A3004372DA /* Build configuration list for PBXNativeTarget "Z install" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
 				3379C1CE2DA869A3004372DA /* Debug */,

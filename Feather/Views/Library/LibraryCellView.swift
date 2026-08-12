@@ -2,8 +2,6 @@
 //  LibraryAppIconView.swift
 //  Feather
 //
-//  Created by samara on 11.04.2025.
-//
 
 import SwiftUI
 import NimbleExtensions
@@ -14,20 +12,9 @@ struct LibraryCellView: View {
 	@Environment(\.horizontalSizeClass) private var horizontalSizeClass
 	@Environment(\.editMode) private var editMode
 	@ObservedObject private var updateManager = UpdateManager.shared
-	@State private var _signedUpdateConfirmation: AppUpdate?
-	@State private var _isSignedUpdateConfirmationPresented = false
 
-	var certInfo: Date.ExpirationInfo? {
-		Storage.shared.getCertificate(from: app)?.expiration?.expirationInfo()
-	}
-	
-	var certRevoked: Bool {
-		Storage.shared.getCertificate(from: app)?.revoked == true
-	}
-	
 	var app: AppInfoPresentable
 	@Binding var selectedInfoAppPresenting: AnyApp?
-	@Binding var selectedSigningAppPresenting: AnyApp?
 	@Binding var selectedInstallAppPresenting: AnyApp?
 	@Binding var selectedAppUUIDs: Set<String>
 	
@@ -79,7 +66,7 @@ struct LibraryCellView: View {
 		.background(
 			isRegular
 				? RoundedRectangle(cornerRadius: 18, style: .continuous)
-				.fill(_isSelected && isEditing ? Color.accentColor.opacity(0.1) : Color(.quaternarySystemFill))
+					.fill(_isSelected && isEditing ? Color.accentColor.opacity(0.1) : Color(.quaternarySystemFill))
 				: nil
 		)
 		.contentShape(Rectangle())
@@ -100,25 +87,6 @@ struct LibraryCellView: View {
 				_contextActionsExtra(for: app)
 				Divider()
 				_actions(for: app)
-			}
-		}
-		.confirmationDialog(
-			.localized("Update Available"),
-			isPresented: $_isSignedUpdateConfirmationPresented,
-			titleVisibility: .visible
-		) {
-			Button(.localized("Install Current Version"), systemImage: "square.and.arrow.down") {
-				selectedInstallAppPresenting = AnyApp(base: app)
-			}
-			if let update = _signedUpdateConfirmation {
-				Button(.localized("Download Update"), systemImage: "arrow.down.circle") {
-					_startUpdateDownload(update)
-				}
-			}
-			Button(.localized("Cancel"), role: .cancel) {}
-		} message: {
-			if let update = _signedUpdateConfirmation {
-				Text("\(update.appName) \(update.remoteVersion)")
 			}
 		}
 	}
@@ -172,37 +140,19 @@ extension LibraryCellView {
 	private func _contextActionsExtra(for app: AppInfoPresentable) -> some View {
 		if let update = updateManager.update(for: app) {
 			Button(.localized("Update"), systemImage: "arrow.down.circle") {
-				if app.isSigned {
-					_signedUpdateConfirmation = update
-					_isSignedUpdateConfirmationPresented = true
-				} else {
-					_startUpdateDownload(update)
-				}
+				_startUpdateDownload(update)
 			}
 		}
-		
-		if app.isSigned {
-			if let id = app.identifier {
-				Button(.localized("Open"), systemImage: "app.badge.checkmark") {
-					UIApplication.openApp(with: id)
-				}
+		if let id = app.identifier {
+			Button(.localized("Open"), systemImage: "app.badge.checkmark") {
+				UIApplication.openApp(with: id)
 			}
-			Button(.localized("Install"), systemImage: "square.and.arrow.down") {
-				selectedInstallAppPresenting = AnyApp(base: app)
-			}
-			Button(.localized("Re-sign"), systemImage: "signature") {
-				selectedSigningAppPresenting = AnyApp(base: app)
-			}
-			Button(.localized("Export"), systemImage: "square.and.arrow.up") {
-				selectedInstallAppPresenting = AnyApp(base: app, archive: true)
-			}
-		} else {
-			Button(.localized("Install"), systemImage: "square.and.arrow.down") {
-				selectedInstallAppPresenting = AnyApp(base: app)
-			}
-			Button(.localized("Sign"), systemImage: "signature") {
-				selectedSigningAppPresenting = AnyApp(base: app)
-			}
+		}
+		Button(.localized("Install"), systemImage: "square.and.arrow.down") {
+			selectedInstallAppPresenting = AnyApp(base: app)
+		}
+		Button(.localized("Export"), systemImage: "square.and.arrow.up") {
+			selectedInstallAppPresenting = AnyApp(base: app, archive: true)
 		}
 	}
 	
@@ -210,44 +160,21 @@ extension LibraryCellView {
 	private func _buttonActions(for app: AppInfoPresentable) -> some View {
 		Group {
 			if let update = updateManager.update(for: app) {
-				if app.isSigned {
-					Button {
-						_signedUpdateConfirmation = update
-						_isSignedUpdateConfirmationPresented = true
-					} label: {
-						FRExpirationPillView(
-							title: .localized("Install"),
-							revoked: certRevoked,
-							expiration: certInfo
-						)
-					}
-				} else {
-					Button {
-						_startUpdateDownload(update)
-					} label: {
-						FRExpirationPillView(
-							title: .localized("Update"),
-							revoked: false,
-							expiration: nil
-						)
-					}
+				Button {
+					_startUpdateDownload(update)
+				} label: {
+					FRExpirationPillView(
+						title: .localized("Update"),
+						revoked: false,
+						expiration: nil
+					)
 				}
-			} else if app.isSigned {
+			} else {
 				Button {
 					selectedInstallAppPresenting = AnyApp(base: app)
 				} label: {
 					FRExpirationPillView(
 						title: .localized("Install"),
-						revoked: certRevoked,
-						expiration: certInfo
-					)
-				}
-			} else {
-				Button {
-					selectedSigningAppPresenting = AnyApp(base: app)
-				} label: {
-					FRExpirationPillView(
-						title: .localized("Sign"),
 						revoked: false,
 						expiration: nil
 					)

@@ -1,0 +1,58 @@
+name: Build Z install (unsigned IPA)
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+  build-unsigned-ipa:
+    name: Build unsigned IPA
+    runs-on: macos-15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Resolve Swift packages
+        run: |
+          xcodebuild -project Feather.xcodeproj \
+            -scheme "Z install" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -resolvePackageDependencies
+
+      - name: Build app (unsigned)
+        run: |
+          xcodebuild -project Feather.xcodeproj \
+            -scheme "Z install" \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "${{ github.workspace }}/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            build
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH=$(find "${{ github.workspace }}/DerivedData" -type d -name "Zinstall.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::Zinstall.app not found after build"
+            exit 1
+          fi
+          echo "Packaging: $APP_PATH"
+          mkdir -p "${{ github.workspace }}/Payload"
+          cp -R "$APP_PATH" "${{ github.workspace }}/Payload/"
+          cd "${{ github.workspace }}"
+          zip -r "Zinstall-unsigned.ipa" Payload
+          ls -lh "Zinstall-unsigned.ipa"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zinstall-unsigned
+          path: Zinstall-unsigned.ipa
+          if-no-files-found: error

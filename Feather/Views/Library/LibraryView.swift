@@ -2,8 +2,6 @@
 //  ContentView.swift
 //  Feather
 //
-//  Created by samara on 10.04.2025.
-//
 
 import SwiftUI
 import CoreData
@@ -15,7 +13,6 @@ struct LibraryView: View {
 	@StateObject var updateManager = UpdateManager.shared
 	
 	@State private var _selectedInfoAppPresenting: AnyApp?
-	@State private var _selectedSigningAppPresenting: AnyApp?
 	@State private var _selectedInstallAppPresenting: AnyApp?
 	@State private var _isImportingPresenting = false
 	@State private var _isDownloadingPresenting = false
@@ -41,21 +38,11 @@ struct LibraryView: View {
 		}
 	}
 	
-	private var _filteredSignedApps: [Signed] {
-		filteredAndSortedApps(from: _signedApps)
-	}
-	
 	private var _filteredImportedApps: [Imported] {
 		filteredAndSortedApps(from: _importedApps)
 	}
 	
 	// MARK: Fetch
-	@FetchRequest(
-		entity: Signed.entity(),
-		sortDescriptors: [NSSortDescriptor(keyPath: \Signed.date, ascending: false)],
-		animation: .snappy
-	) private var _signedApps: FetchedResults<Signed>
-	
 	@FetchRequest(
 		entity: Imported.entity(),
 		sortDescriptors: [NSSortDescriptor(keyPath: \Imported.date, ascending: false)],
@@ -73,27 +60,6 @@ struct LibraryView: View {
 		NBNavigationView(.localized("Library")) {
 			NBListAdaptable {
 				if
-					!_filteredSignedApps.isEmpty,
-					_selectedScope == .all || _selectedScope == .signed
-				{
-					NBSection(
-						.localized("Signed"),
-						secondary: _filteredSignedApps.count.description
-					) {
-						ForEach(_filteredSignedApps, id: \.uuid) { app in
-							LibraryCellView(
-								app: app,
-								selectedInfoAppPresenting: $_selectedInfoAppPresenting,
-								selectedSigningAppPresenting: $_selectedSigningAppPresenting,
-								selectedInstallAppPresenting: $_selectedInstallAppPresenting,
-								selectedAppUUIDs: $_selectedAppUUIDs
-							)
-							.compatMatchedTransitionSource(id: app.uuid ?? "", ns: _namespace)
-						}
-					}
-				}
-				
-				if
 					!_filteredImportedApps.isEmpty,
 					_selectedScope == .all || _selectedScope == .imported
 				{
@@ -105,7 +71,6 @@ struct LibraryView: View {
 							LibraryCellView(
 								app: app,
 								selectedInfoAppPresenting: $_selectedInfoAppPresenting,
-								selectedSigningAppPresenting: $_selectedSigningAppPresenting,
 								selectedInstallAppPresenting: $_selectedInstallAppPresenting,
 								selectedAppUUIDs: $_selectedAppUUIDs
 							)
@@ -122,10 +87,7 @@ struct LibraryView: View {
 			}
 			.scrollDismissesKeyboard(.interactively)
 			.overlay {
-				if
-					_filteredSignedApps.isEmpty,
-					_filteredImportedApps.isEmpty
-				{
+				if _filteredImportedApps.isEmpty {
 					if #available(iOS 17, *) {
 						ContentUnavailableView {
 							Label(.localized("No Apps"), systemImage: "questionmark.app.fill")
@@ -192,10 +154,6 @@ struct LibraryView: View {
 					.presentationDetents([.height(200)])
 					.presentationDragIndicator(.visible)
 			}
-			.fullScreenCover(item: $_selectedSigningAppPresenting) { app in
-				SigningView(app: app.base)
-					.compatNavigationTransition(id: app.base.uuid ?? "", ns: _namespace)
-			}
 			.sheet(isPresented: $_isImportingPresenting) {
 				FileImporterRepresentableView(
 					allowedContentTypes:  [.ipa, .tipa],
@@ -224,8 +182,8 @@ struct LibraryView: View {
 					}
 				}
 			}
-			.onReceive(NotificationCenter.default.publisher(for: Notification.Name("Feather.installApp"))) { _ in
-				if let latest = _signedApps.first {
+			.onReceive(NotificationCenter.default.publisher(for: Notification.Name("Zinstall.installApp"))) { _ in
+				if let latest = _importedApps.first {
 					_selectedInstallAppPresenting = AnyApp(base: latest)
 				}
 			}
@@ -272,21 +230,11 @@ extension LibraryView {
 	}
 	
 	private func _getAllApps() -> [AppInfoPresentable] {
-		var allApps: [AppInfoPresentable] = []
-		
-		if _selectedScope == .all || _selectedScope == .signed {
-			allApps.append(contentsOf: _filteredSignedApps)
-		}
-		
-		if _selectedScope == .all || _selectedScope == .imported {
-			allApps.append(contentsOf: _filteredImportedApps)
-		}
-		
-		return allApps
+		return _filteredImportedApps
 	}
 	
 	private func _checkForUpdates() async {
-		let localApps = _signedApps.map { $0 as AppInfoPresentable } + _importedApps.map { $0 as AppInfoPresentable }
+		let localApps = _importedApps.map { $0 as AppInfoPresentable }
 		await updateManager.checkForUpdates(
 			sources: Array(_sources),
 			localApps: localApps
@@ -320,13 +268,11 @@ extension LibraryView {
 extension LibraryView {
 	enum Scope: CaseIterable {
 		case all
-		case signed
 		case imported
 		
 		var displayName: String {
 			switch self {
 			case .all: return .localized("All")
-			case .signed: return .localized("Signed")
 			case .imported: return .localized("Imported")
 			}
 		}

@@ -2,8 +2,6 @@
 //  SettingsView.swift
 //  Feather
 //
-//  Created by samara on 10.04.2025.
-//
 
 import SwiftUI
 import NimbleViews
@@ -13,30 +11,11 @@ import IDeviceSwift
 
 // MARK: - View
 struct SettingsView: View {
-	@AppStorage("feather.selectedCert") private var _storedSelectedCert: Int = 0
 	@State private var _currentIcon: String? = UIApplication.shared.alternateIconName
 	
-	// MARK: Fetch
-	@FetchRequest(
-		entity: CertificatePair.entity(),
-		sortDescriptors: [NSSortDescriptor(keyPath: \CertificatePair.date, ascending: false)],
-		animation: .snappy
-	) private var _certificates: FetchedResults<CertificatePair>
-	
-	private var selectedCertificate: CertificatePair? {
-		guard
-			_storedSelectedCert >= 0,
-			_storedSelectedCert < _certificates.count
-		else {
-			return nil
-		}
-		return _certificates[_storedSelectedCert]
-	}
-
-    
 	private let _donationsUrl = "https://github.com/sponsors/claration"
 	private let _githubUrl = "https://github.com/claration/Feather"
-    
+	
 	// MARK: Body
 	var body: some View {
 		NBNavigationView(.localized("Settings")) {
@@ -55,28 +34,8 @@ struct SettingsView: View {
 						Label(.localized("App Icon"), systemImage: "app.badge")
 					}
 				}
-                
-				NBSection(.localized("Certificates")) {
-                    
-					if let cert = selectedCertificate {
-						CertificatesCellView(cert: cert)
-					} else {
-						Text(.localized("No Certificate"))
-							.font(.footnote)
-							.foregroundColor(.disabled())
-					}
-					NavigationLink(destination: CertificatesView()) {
-						Label(.localized("Certificates"), systemImage: "checkmark.seal")
-					}
-                 
-				} footer: {
-					Text(.localized("Add and manage certificates used for signing applications."))
-				}
-                
+				
 				NBSection(.localized("Features")) {
-					NavigationLink(destination: ConfigurationView()) {
-						Label(.localized("Signing Options"), systemImage: "signature")
-					}
 					NavigationLink(destination: ArchiveView()) {
 						Label(.localized("Archive & Compression"), systemImage: "archivebox")
 					}
@@ -84,9 +43,9 @@ struct SettingsView: View {
 						Label(.localized("Installation"), systemImage: "arrow.down.circle")
 					}
 				} footer: {
-					Text(.localized("Configure the apps way of installing, its zip compression levels, and custom modifications to apps."))
+					Text(.localized("Configure the apps way of installing and its zip compression levels."))
 				}
-                
+				
 				_directories()
                 
 				Section {
@@ -94,7 +53,7 @@ struct SettingsView: View {
 						Label(.localized("Reset"), systemImage: "trash")
 					}
 				} footer: {
-					Text(.localized("Reset the applications sources, certificates, apps, and general contents."))
+					Text(.localized("Reset the applications sources, apps, and general contents."))
 				}
 			}
 		}
@@ -113,7 +72,7 @@ extension SettingsView {
 					FRAppIconView(size: 23)
 				}
 			}
-            
+			
 			Button(.localized("Submit Feedback"), systemImage: "safari") {
 				let bugAction: UIAlertAction = .init(title: .localized("Bug Report"), style: .default) { _ in
 					UIApplication.open(_makeGitHubIssueURL(url: _githubUrl))
@@ -136,7 +95,7 @@ extension SettingsView {
 			Text(.localized("If any issues occur within the app please report it via the GitHub repository. When submitting an issue, make sure to submit detailed information."))
 		}
 	}
-    
+	
 	@ViewBuilder
 	private func _directories() -> some View {
 		NBSection(.localized("Misc")) {
@@ -146,14 +105,11 @@ extension SettingsView {
 			Button(.localized("Open Archives"), systemImage: "folder") {
 				UIApplication.open(FileManager.default.archives.toSharedDocumentsURL()!)
 			}
-			Button(.localized("Open Certificates"), systemImage: "folder") {
-				UIApplication.open(FileManager.default.certificates.toSharedDocumentsURL()!)
-			}
 		} footer: {
 			Text(.localized("All of the apps files are contained in the documents directory, here are some quick links to these."))
 		}
 	}
-    
+	
 	private func _makeGitHubIssueURL(url: String) -> String {
 		var configurationSection = "### App Configuration:\n"
 		
@@ -174,7 +130,7 @@ extension SettingsView {
 		default:
 			configurationSection += "- Install method: `Unknown`\n"
 		}
-        
+		
 		let body = """
 		### Device Information
 		- Device: `\(MobileGestalt().getStringForName("PhysicalHardwareNameString") ?? "Unknown")`
