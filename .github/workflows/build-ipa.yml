@@ -49,15 +49,24 @@ jobs:
             build
 
       - name: Package unsigned IPA
+        # NOTE: with a custom -derivedDataPath, xcodebuild places the real .app
+        # under <workspace>/_build/Applications/ and only leaves a *symlink* at
+        # DerivedData/Build/Products/Release-iphoneos/Zinstall.app. `find -type d`
+        # does NOT follow symlinks, so we must use `find -L` and `cp -RL`.
         run: |
-          APP_PATH=$(find "${{ github.workspace }}/DerivedData" -type d -name "Zinstall.app" | head -n 1)
-          if [ -z "$APP_PATH" ]; then
+          set -e
+          APP_PATH="${{ github.workspace }}/DerivedData/Build/Products/Release-iphoneos/Zinstall.app"
+          if [ ! -e "$APP_PATH" ]; then
+            APP_PATH=$(find -L "${{ github.workspace }}/DerivedData" -type d -name "Zinstall.app" 2>/dev/null | head -n 1)
+          fi
+          if [ -z "$APP_PATH" ] || [ ! -e "$APP_PATH" ]; then
             echo "::error::Zinstall.app not found after build"
             exit 1
           fi
           echo "Packaging: $APP_PATH"
+          rm -rf "${{ github.workspace }}/Payload"
           mkdir -p "${{ github.workspace }}/Payload"
-          cp -R "$APP_PATH" "${{ github.workspace }}/Payload/"
+          cp -RL "$APP_PATH" "${{ github.workspace }}/Payload/"
           cd "${{ github.workspace }}"
           zip -r "Zinstall-unsigned.ipa" Payload
           ls -lh "Zinstall-unsigned.ipa"
