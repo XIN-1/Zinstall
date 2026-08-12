@@ -73,7 +73,7 @@ struct AppearanceView: View {
 				}
 			}
 			
-			NBSection(.localized("Sources")) {
+			NBSection(.localized("下载")) {
 				Picker(.localized("Store Cell Appearance"), selection: $_storeCellAppearance) {
 					ForEach(0..<_storeCellAppearanceMethods.count, id: \.self) { index in
 						let method = _storeCellAppearanceMethods[index]

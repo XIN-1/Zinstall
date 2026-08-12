@@ -30,7 +30,7 @@ struct SourcesView: View {
 	
 	// MARK: Body
 	var body: some View {
-		NBNavigationView(.localized("Sources")) {
+		NBNavigationView(.localized("下载")) {
 			NBListAdaptable {
 				if !_filteredSources.isEmpty {
 					Section {
