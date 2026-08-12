@@ -1,64 +1,53 @@
-# Feather
+# Z install
 
-[![GitHub Release](https://img.shields.io/github/v/release/claration/Feather?include_prereleases)](https://github.com/claration/Feather/releases)
-[![GitHub Downloads (all assets, all releases)](https://img.shields.io/github/downloads/claration/Feather/total)](https://github.com/claration/Feather/releases)
-[![GitHub License](https://img.shields.io/github/license/claration/Feather?color=%23C96FAD)](https://github.com/claration/Feather/blob/main/LICENSE)
-[![Sponsor Me](https://img.shields.io/static/v1?label=Sponsor&message=%E2%9D%A4&logo=GitHub&color=%23fe8e86)](https://github.com/sponsors/khcrysalis)
+[![GitHub Actions](https://github.com/XIN-1/Zinstall/actions/workflows/build-ipa.yml/badge.svg)](https://github.com/XIN-1/Zinstall/actions)
+[![GitHub License](https://img.shields.io/github/license/XIN-1/Zinstall?color=%23C96FAD)](https://github.com/XIN-1/Zinstall/blob/main/LICENSE)
 
-This app allows you to install and manage applications contained in a single app, using certificate pairs and various installation techniques to allow apps to install to your device. This is an entirely stock application and uses built-in features to be able to do this!
+**Z install** is a lightweight IPA installer for iOS — a trimmed-down fork of [Feather](https://github.com/claration/Feather).
 
-<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="Images/Image-dark.png"><source media="(prefers-color-scheme: light)" srcset="Images/Image-light.png"><img alt="Feather" src="Images/Image-light.png"></picture></p>
+Unlike the full Feather, **Z install removes all signing features**. It is built to **install already-signed IPA files** onto your device using built-in installation techniques. You bring your own signing (your certificate, or on-device signing via Feather/Zsign); Z install handles the install.
+
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="Images/Image-dark.png"><source media="(prefers-color-scheme: light)" srcset="Images/Image-light.png"><img alt="Z install" src="Images/Image-light.png"></picture></p>
 
 ### Features
 
-- User friendly, and clean UI.
-- Sign and install applications.
+- User friendly, clean UI.
+- Install already-signed applications (`.ipa`).
 - Supports [AltStore](https://faq.altstore.io/distribute-your-apps/make-a-source#apps) repositories.
-- View detailed information about apps and your certificates.
-- Configurable signing options mainly for modifying the app, such as appearance and allowing support for the files app.
-  - This includes patching apps for compatibility and Liquid Glass.
-- Tweak support for advanced users, using [Ellekit](https://github.com/tealbathingsuit/ellekit) for injection. 
+- View detailed information about installed apps.
+- Tweak support for advanced users, using [Ellekit](https://github.com/tealbathingsuit/ellekit) for injection.
   - Supports injecting `.deb` and `.dylib` files.
-- Actively maintained: always ensuring most apps get installed properly.
-- No tracking or analytics, ensuring user privacy.
-- Of course, open source and free.
+- Liquid Glass UI (iOS 26).
+- No tracking or analytics — your privacy is respected.
+- Open source and free.
 
-## Download
+## Download / Build
 
-Visit [releases](https://github.com/claration/Feather/releases) and get the latest `.ipa`.
+Z install is distributed as an **unsigned** IPA. Because it is unsigned, iOS will not install it directly — you must sign it yourself (with your own certificate, or on-device via Feather/Zsign) before installing.
 
-<a href="https://celloserenity.github.io/altdirect/?url=https://raw.githubusercontent.com/claration/Feather/refs/heads/main/app-repo.json" target="_blank">
-   <img src="https://github.com/CelloSerenity/altdirect/blob/main/assets/png/AltSource_Blue.png?raw=true" alt="Add AltSource" width="200">
-</a>
-<a href="https://github.com/claration/Feather/releases/latest/download/Feather.ipa" target="_blank">
-   <img src="https://github.com/CelloSerenity/altdirect/blob/main/assets/png/Download_Blue.png?raw=true" alt="Download .ipa" width="200">
-</a>
+To get a build:
+
+1. Go to the **Actions** tab of this repo.
+2. Open the **Build Z install (unsigned IPA)** workflow.
+3. Download the **`Zinstall-unsigned`** artifact — inside is **`Zinstall-unsigned.ipa`**.
+4. Sign it with your certificate / on-device tool, then install.
 
 ## How does it work?
 
-Visit the [HOW IT WORKS](./HOW_IT_WORKS.md) page.
-
-## Sponsors
-
-| Thanks to all my [sponsors](https://github.com/sponsors/claration)!! |
-|:-:|
-| <img src="https://sponsors.claration.dev/sponsors.png"> |
-| _**"samara is cute" - Vendicated**_ |
+Visit the [HOW IT WORKS](./HOW_IT_WORKS.md) page (inherited from Feather).
 
 ## Acknowledgements
 
-- [Samara](https://github.com/claration) - The maker
+- [Feather](https://github.com/claration/Feather) - The original project this is forked from.
 - [idevice](https://github.com/jkcoxson/idevice) - Backend for builds with this included, used for communication with `installd`.
 - [*.backloop.dev](https://backloop.dev/) - localhost with public CA signed SSL certificate
 - [Vapor](https://github.com/vapor/vapor) - A server-side Swift HTTP web framework.
-- [Zsign](https://github.com/zhlynn/zsign) - Allowing to sign on-device, reimplimented to work on other platforms such as iOS.
+- [Zsign](https://github.com/zhlynn/zsign) - Allowing to sign on-device.
 - [LiveContainer](https://github.com/LiveContainer/LiveContainer) - Fixes/some help
 - [Nuke](https://github.com/kean/Nuke) - Image caching.
 - [Asspp](https://github.com/Lakr233/Asspp) - Some code for setting up the http server.
 - [plistserver](https://github.com/nekohaxx/plistserver) - Hosted on https://api.palera.in.
 
-## License 
+## License
 
-This project is licensed under the GPL-3.0 license. You can see the full details of the license [here](https://github.com/claration/Feather/blob/main/LICENSE). It's under this specific license because I wanted to make a project that is transparent to the user thats related to certificate paired sideloading, before this project there weren't any open source projects that filled in this gap.
-
-By contributing to this project, you agree to license your code under the GPL-3.0 license as well (including agreeing to license exceptions), ensuring that your work, like all other contributions, remains freely accessible and open.
+This project is licensed under the GPL-3.0 license. See [LICENSE](./LICENSE).

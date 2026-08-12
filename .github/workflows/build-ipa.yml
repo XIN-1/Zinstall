@@ -13,6 +13,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Select latest Xcode
+        # NimbleKit uses the iOS 26 Liquid Glass API (glassEffect), which is
+        # only present in the iOS 26 SDK shipped with Xcode 26. Pick the newest
+        # Xcode installed on the runner so we compile against that SDK.
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app 2>/dev/null | sort -V | tail -1)
+          echo "Selected Xcode: $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+
       - name: Show Xcode version
         run: xcodebuild -version
 
