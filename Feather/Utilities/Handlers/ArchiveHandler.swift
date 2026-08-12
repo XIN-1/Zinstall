@@ -11,6 +11,10 @@ import Zip
 import SwiftUI
 import IDeviceSwift
 
+enum ArchiveHandlerError: Error {
+	case appNotFound
+}
+
 final class ArchiveHandler: NSObject {
 	@ObservedObject var viewModel: InstallerStatusViewModel
 	
@@ -32,7 +36,7 @@ final class ArchiveHandler: NSObject {
 	
 	func move() async throws {
 		guard let appUrl = Storage.shared.getAppDirectory(for: _app) else {
-			throw SigningFileHandlerError.appNotFound
+			throw ArchiveHandlerError.appNotFound
 		}
 		
 		let payloadUrl = _uniqueWorkDir.appendingPathComponent("Payload")
@@ -47,7 +51,7 @@ final class ArchiveHandler: NSObject {
 	func archive() async throws -> URL {
 		return try await Task.detached(priority: .background) { [self] in
 			guard let payloadUrl = await self._payloadUrl else {
-				throw SigningFileHandlerError.appNotFound
+				throw ArchiveHandlerError.appNotFound
 			}
 			
 			let zipUrl = self._uniqueWorkDir.appendingPathComponent("Archive.zip")
