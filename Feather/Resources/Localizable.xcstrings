@@ -998,7 +998,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "添加软件源"
+            "value" : "添加下载"
           }
         }
       }
@@ -5228,7 +5228,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "输入软件源链接"
+            "value" : "输入下载源链接"
           }
         }
       }
@@ -15992,7 +15992,7 @@
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "软件源链接"
+            "value" : "下载源链接"
           }
         }
       }
