@@ -28,8 +28,7 @@ final class ArchiveHandler: NSObject {
 	init(app: AppInfoPresentable, viewModel: InstallerStatusViewModel) {
 		self.viewModel = viewModel
 		self._app = app
-		self._uniqueWorkDir = _fileManager.temporaryDirectory
-			.appendingPathComponent("FeatherInstall_\(_uuid)", isDirectory: true)
+		self._uniqueWorkDir = _fileManager.temporaryWork("FeatherInstall_\(_uuid)")
 		
 		super.init()
 	}
@@ -43,6 +42,7 @@ final class ArchiveHandler: NSObject {
 		let movedAppURL = payloadUrl.appendingPathComponent(appUrl.lastPathComponent)
 
 		try _fileManager.createDirectoryIfNeeded(at: payloadUrl)
+		_fileManager.excludeFromBackup(_uniqueWorkDir)
 		
 		try _fileManager.copyItem(at: appUrl, to: movedAppURL)
 		_payloadUrl = payloadUrl
@@ -81,6 +81,7 @@ final class ArchiveHandler: NSObject {
 			at: package,
 			to: dest
 		)
+		try? _fileManager.removeFileIfNeeded(at: _uniqueWorkDir)
 		
 		if shouldOpen {
 			await MainActor.run {

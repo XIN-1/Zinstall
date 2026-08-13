@@ -71,8 +71,9 @@ class TweakHandler {
 
 		try await _checkEllekit()
 
-		let baseTmpDir = _fileManager.temporaryDirectory.appendingPathComponent("FeatherTweak_\(UUID().uuidString)")
+		let baseTmpDir = _fileManager.temporaryWork("FeatherTweak_\(UUID().uuidString)")
 		try _fileManager.createDirectoryIfNeeded(at: baseTmpDir)
+		_fileManager.excludeFromBackup(baseTmpDir)
 		
 		// check for appropriate files, if theres debs
 		// it will extract then add a url, if theres no url, i.e.

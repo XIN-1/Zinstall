@@ -30,14 +30,14 @@ final class AppFileHandler: NSObject, @unchecked Sendable {
 		self._install = install
 		self._download = download
 		self._sourceProvenance = sourceProvenance ?? download?.sourceProvenance
-		self._uniqueWorkDir = _fileManager.temporaryDirectory
-			.appendingPathComponent("FeatherImport_\(_uuid)", isDirectory: true)
+		self._uniqueWorkDir = _fileManager.temporaryWork("FeatherImport_\(_uuid)")
 		
 		super.init()
 	}
 	
 	func copy() async throws {
 		try _fileManager.createDirectoryIfNeeded(at: _uniqueWorkDir)
+		_fileManager.excludeFromBackup(_uniqueWorkDir)
 		
 		let destinationURL = _uniqueWorkDir.appendingPathComponent(_ipa.lastPathComponent)
 

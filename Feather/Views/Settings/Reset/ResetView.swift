@@ -145,11 +145,20 @@ extension ResetView {
 extension ResetView {
 	static func clearWorkCache() {
 		let fileManager = FileManager.default
+		// 系统 tmp（原有）
 		let tmpDirectory = fileManager.temporaryDirectory
-		
 		if let files = try? fileManager.contentsOfDirectory(atPath: tmpDirectory.path()) {
 			for file in files {
 				try? fileManager.removeItem(atPath: tmpDirectory.appendingPathComponent(file).path())
+			}
+		}
+		// ✅ 清理应用目录根里的临时工作目录（Documents/FeatherImport_*、FeatherInstall_*、FeatherTweak_*）
+		// 只删带 `Feather` 前缀的项，绝不误删用户下载的 IPA/zip 与 Archives/Signed/Unsigned/Certificates
+		let prefixes = ["FeatherImport_", "FeatherInstall_", "FeatherTweak_"]
+		let root = URL.documentsDirectory
+		if let files = try? fileManager.contentsOfDirectory(atPath: root.path()) {
+			for f in files where prefixes.contains(where: { f.hasPrefix($0) }) {
+				try? fileManager.removeItem(atPath: root.appendingPathComponent(f).path())
 			}
 		}
 	}

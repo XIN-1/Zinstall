@@ -114,8 +114,7 @@ struct DownloadManagerView: View {
 
 					for url in urls {
 						let id = "FeatherManualDownload_\(UUID().uuidString)"
-						let dl = downloadManager.startArchive(from: url, id: id)
-						try? downloadManager.handlePachageFile(url: url, dl: dl)
+						_ = downloadManager.importFile(from: url, id: id)
 					}
 				}
 				.ignoresSafeArea()
@@ -133,6 +132,11 @@ struct DownloadManagerView: View {
 							id: "FeatherManualDownload_\(UUID().uuidString)"
 						)
 					}
+				}
+			}
+			.onReceive(NotificationCenter.default.publisher(for: .zDownloadStarted)) { notification in
+				if let url = notification.object as? URL {
+					_bannerDownloadURL = url
 				}
 			}
 		}
@@ -223,9 +227,7 @@ private extension DownloadManagerView {
 			Divider()
 
 			ZStack {
-				BrowserView(model: _browser) { url in
-					_startBrowserDownload(url)
-				}
+				BrowserView(model: _browser)
 
 				if _browser.currentURL == nil {
 					VStack(spacing: 12) {
@@ -282,13 +284,6 @@ private extension DownloadManagerView {
 		}
 	}
 
-	private func _startBrowserDownload(_ url: URL) {
-		_ = downloadManager.startDownload(
-			from: url,
-			id: "FeatherManualDownload_\(UUID().uuidString)"
-		)
-		_bannerDownloadURL = url
-	}
 }
 
 // MARK: - Extension: Import Actions
@@ -329,7 +324,6 @@ private struct _DownloadRow: View {
 // MARK: - WKWebView 包装器
 private struct BrowserView: UIViewRepresentable {
 	@ObservedObject var model: BrowserViewModel
-	var onDownload: (URL) -> Void
 
 	func makeCoordinator() -> Coordinator {
 		Coordinator()
@@ -341,7 +335,6 @@ private struct BrowserView: UIViewRepresentable {
 		webView.allowsBackForwardNavigationGestures = true
 		webView.navigationDelegate = context.coordinator
 		context.coordinator.model = model
-		context.coordinator.onDownload = onDownload
 		context.coordinator.observeProgress(webView)
 		model.webView = webView
 		return webView
@@ -349,14 +342,12 @@ private struct BrowserView: UIViewRepresentable {
 
 	func updateUIView(_ uiView: WKWebView, context: Context) {
 		context.coordinator.model = model
-		context.coordinator.onDownload = onDownload
 		model.webView = uiView
 	}
 
 	// MARK: Coordinator
 	final class Coordinator: NSObject, WKNavigationDelegate {
 		var model: BrowserViewModel?
-		var onDownload: ((URL) -> Void)?
 		var progressObservation: NSKeyValueObservation?
 
 		static let downloadableExtensions: Set<String> = ["ipa", "tipa", "zip", "rar", "deb"]
@@ -408,11 +399,19 @@ private struct BrowserView: UIViewRepresentable {
 			webView.reload()
 		}
 
-		func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-			guard let url = navigationAction.request.url else {
-				decisionHandler(.allow)
-				return
+		func webView(_ webView: WKWebView,
+					 didReceive challenge: URLAuthenticationChallenge,
+					 completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+			guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+				  let trust = challenge.protectionSpace.serverTrust else {
+				completionHandler(.performDefaultHandling, nil); return
 			}
+			completionHandler(.useCredential, URLCredential(trust: trust))
+		}
+
+		func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
+					 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+			guard let url = navigationAction.request.url else { decisionHandler(.allow); return }
 
 			// 新窗口（target="_blank"）→ 在当前视图打开
 			if navigationAction.targetFrame == nil {
@@ -428,29 +427,24 @@ private struct BrowserView: UIViewRepresentable {
 				shouldDownload = Self.isDownloadable(url)
 			}
 
-			if shouldDownload {
-				onDownload?(url)
-				decisionHandler(.cancel)
-				return
-			}
-
-			decisionHandler(.allow)
+			decisionHandler(shouldDownload ? .download : .allow)
 		}
 
-		func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-			if let url = navigationResponse.response.url, Self.isDownloadable(url) {
-				onDownload?(url)
-				decisionHandler(.cancel)
-				return
-			}
-			decisionHandler(.allow)
+		func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
+					 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+			let shouldDownload = !navigationResponse.canShowMIMEType
+				|| (navigationResponse.response.url.map(Self.isDownloadable) ?? false)
+			decisionHandler(shouldDownload ? .download : .allow)
 		}
 
-		func webView(_ webView: WKWebView, didReceiveServerRedirectForProvisionalNavigation navigation: WKNavigation!) {
-			if let url = webView.url, Self.isDownloadable(url) {
-				onDownload?(url)
-				webView.stopLoading()
-			}
+		func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
+			download.delegate = DownloadManager.shared
+			if let u = navigationAction.request.url { DownloadManager.shared._setWKOriginalURL(u, for: download) }
+		}
+
+		func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
+			download.delegate = DownloadManager.shared
+			if let u = navigationResponse.response.url { DownloadManager.shared._setWKOriginalURL(u, for: download) }
 		}
 	}
 }
