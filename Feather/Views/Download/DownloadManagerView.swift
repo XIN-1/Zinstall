@@ -432,16 +432,12 @@ private struct BrowserView: UIViewRepresentable {
 
 		func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
 					 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-			// 仅在「链接扩展名可下载」或「服务器明确建议下载」时才转下载，
-			// 不再用 !canShowMIMEType 兜底，避免自签服务器返回的非标准页面被误吞成下载而白屏。
+			// 仅在「链接扩展名可下载」时才转下载，不再用 !canShowMIMEType 兜底，
+			// 避免自签服务器返回的非标准页面被误吞成下载而白屏。
+			// 注：WKNavigationResponse 无 shouldPerformDownload（那是 WKNavigationAction 的属性），
+			// 服务器建议下载已在 navigationAction 层用 shouldPerformDownload 处理。
 			let responseURL = navigationResponse.response.url
-			let shouldDownload: Bool
-			if #available(iOS 15.0, *) {
-				shouldDownload = (responseURL.map(Self.isDownloadable) ?? false)
-					|| navigationResponse.shouldPerformDownload
-			} else {
-				shouldDownload = (responseURL.map(Self.isDownloadable) ?? false)
-			}
+			let shouldDownload = responseURL.map(Self.isDownloadable) ?? false
 			decisionHandler(shouldDownload ? .download : .allow)
 		}
 
