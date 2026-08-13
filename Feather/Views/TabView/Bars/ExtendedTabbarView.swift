@@ -28,7 +28,8 @@ struct ExtendedTabbarView: View {
 				.customizationID("tab.\(tab.rawValue)")
 				.defaultVisibility(.hidden, for: .tabBar)
 				.customizationBehavior(.reorderable, for: .tabBar, .sidebar)
-			.hidden(horizontalSizeClass == .compact)
+				.hidden(horizontalSizeClass == .compact)
+			}
 		}
 		.tabViewStyle(.sidebarAdaptable)
 		.tabViewCustomization($customization)

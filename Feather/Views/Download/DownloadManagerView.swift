@@ -138,25 +138,20 @@ extension DownloadManagerView {
 }
 
 // MARK: - Download Row
+// 复用已验证的 DownloadItemView（内部用 .onReceive 订阅 @Published，
+// 因为 Download 只遵循 Identifiable/Sendable，并非 ObservableObject）
 private struct _DownloadRow: View {
-	@ObservedObject var download: Download
+	let download: Download
 
 	var body: some View {
 		HStack(spacing: 12) {
-			VStack(alignment: .leading, spacing: 4) {
-				Text(download.fileName)
-					.lineLimit(1)
-				Text("\(Int(download.overallProgress * 100))%")
-					.font(.caption)
-					.foregroundStyle(.secondary)
-			}
-			Spacer()
-			ProgressView(value: download.overallProgress)
-				.progressViewStyle(.circular)
+			DownloadItemView(download: download)
+
 			Button {
 				DownloadManager.shared.cancelDownload(download)
 			} label: {
 				Image(systemName: "xmark.circle.fill")
+					.font(.title3)
 					.foregroundStyle(.secondary)
 			}
 			.buttonStyle(.borderless)
