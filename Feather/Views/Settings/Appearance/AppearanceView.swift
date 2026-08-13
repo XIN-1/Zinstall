@@ -21,13 +21,6 @@ struct AppearanceView: View {
 	@AppStorage("Feather.shouldChangeIconsBasedOffStyle")
 	private var _shouldChangeIconsBasedOffStyle: Bool = false
 	
-	@AppStorage("Feather.storeCellAppearance")
-	private var _storeCellAppearance: Int = 0
-	private let _storeCellAppearanceMethods: [(name: String, desc: String)] = [
-		(.localized("Standard"), .localized("Default style for the app, only includes subtitle.")),
-		(.localized("Big Description"), .localized("Adds the localized description of the app."))
-	]
-	
 	@AppStorage("Feather.userTintColor")
 	private var _selectedColorHex: String = "#848ef9"
 	
@@ -71,22 +64,6 @@ struct AppearanceView: View {
 						Toggle(.localized("Tinted Icons"), isOn: $_shouldTintIcons)
 					}
 				}
-			}
-			
-			NBSection(.localized("下载")) {
-				Picker(.localized("Store Cell Appearance"), selection: $_storeCellAppearance) {
-					ForEach(0..<_storeCellAppearanceMethods.count, id: \.self) { index in
-						let method = _storeCellAppearanceMethods[index]
-						NBTitleWithSubtitleView(
-							title: method.name,
-							subtitle: method.desc
-						)
-						.tag(index)
-					}
-
-				}
-				.labelsHidden()
-				.pickerStyle(.inline)
 			}
 		}
 		.onChange(of: _userIntefacerStyle) { value in

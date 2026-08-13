@@ -32,7 +32,7 @@ enum TabEnum: String, CaseIterable, Hashable {
 	@ViewBuilder
 	static func view(for tab: TabEnum) -> some View {
 		switch tab {
-		case .sources: SourcesView()
+		case .sources: DownloadManagerView()
 		case .library: LibraryView()
 		case .settings: SettingsView()
 		}

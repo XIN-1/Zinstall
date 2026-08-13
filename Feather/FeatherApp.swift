@@ -49,10 +49,6 @@ struct FeatherApp: App {
 	
 	private func _handleURL(_ url: URL) {
 		if url.scheme == "zinstall" {
-			/// zinstall://source/<url>
-			if let fullPath = url.validatedScheme(after: "/source/") {
-				FR.handleSource(fullPath) { }
-			}
 			/// zinstall://install/<url.ipa>
 			if
 				let fullPath = url.validatedScheme(after: "/install/"),
