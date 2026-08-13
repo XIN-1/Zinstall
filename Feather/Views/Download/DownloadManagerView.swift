@@ -455,9 +455,6 @@ private struct BrowserView: UIViewRepresentable {
 			let extDownloadable = responseURL.map(Self.isDownloadable) ?? false
 
 			var shouldDownload = extDownloadable
-			if #available(iOS 15.0, *) {
-				shouldDownload = shouldDownload || navigationResponse.shouldPerformDownload
-			}
 			// Content-Disposition: attachment / filename=
 			if let cd = http?.allHeaderFields["Content-Disposition"] as? String {
 				let lower = cd.lowercased()
