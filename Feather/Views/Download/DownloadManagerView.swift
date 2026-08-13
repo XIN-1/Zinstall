@@ -432,8 +432,16 @@ private struct BrowserView: UIViewRepresentable {
 
 		func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
 					 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-			let shouldDownload = !navigationResponse.canShowMIMEType
-				|| (navigationResponse.response.url.map(Self.isDownloadable) ?? false)
+			// 仅在「链接扩展名可下载」或「服务器明确建议下载」时才转下载，
+			// 不再用 !canShowMIMEType 兜底，避免自签服务器返回的非标准页面被误吞成下载而白屏。
+			let responseURL = navigationResponse.response.url
+			let shouldDownload: Bool
+			if #available(iOS 15.0, *) {
+				shouldDownload = (responseURL.map(Self.isDownloadable) ?? false)
+					|| navigationResponse.shouldPerformDownload
+			} else {
+				shouldDownload = (responseURL.map(Self.isDownloadable) ?? false)
+			}
 			decisionHandler(shouldDownload ? .download : .allow)
 		}
 
