@@ -12,6 +12,7 @@ import WebKit
 import CoreData
 import UniformTypeIdentifiers
 import NimbleViews
+import os
 
 // MARK: - 视图模式
 private enum _DownloadMode: String, CaseIterable {
@@ -300,14 +301,25 @@ extension DownloadManagerView {
 }
 
 // MARK: - Download Row
-// 复用已验证的 DownloadItemView（内部用 .onReceive 订阅 @Published，
-// 因为 Download 只遵循 Identifiable/Sendable，并非 ObservableObject）
+// 复用已验证的 DownloadItemView（内部用 .onReceive 订阅 @Published）。
+// 本行用 @ObservedObject 订阅 download.state，失败态下显示「继续」按钮以断点续传。
 private struct _DownloadRow: View {
-	let download: Download
+	@ObservedObject var download: Download
 
 	var body: some View {
 		HStack(spacing: 12) {
 			DownloadItemView(download: download)
+
+			if download.state == .failed {
+				Button {
+					DownloadManager.shared.resumeDownload(download)
+				} label: {
+					Image(systemName: "arrow.clockwise.circle.fill")
+						.font(.title3)
+						.foregroundStyle(.tint)
+				}
+				.buttonStyle(.borderless)
+			}
 
 			Button {
 				DownloadManager.shared.cancelDownload(download)
@@ -426,29 +438,61 @@ private struct BrowserView: UIViewRepresentable {
 			} else {
 				shouldDownload = Self.isDownloadable(url)
 			}
+			os_log(.info, log: .zBrowserDownload, "navAction url=%{public}@ ext=%{public}@ download=%d",
+				   url.absoluteString, Self.isDownloadable(url) ? "yes" : "no", shouldDownload ? 1 : 0)
 
 			decisionHandler(shouldDownload ? .download : .allow)
 		}
 
 		func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
 					 decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-			// 仅在「链接扩展名可下载」时才转下载，不再用 !canShowMIMEType 兜底，
-			// 避免自签服务器返回的非标准页面被误吞成下载而白屏。
-			// 注：WKNavigationResponse 无 shouldPerformDownload（那是 WKNavigationAction 的属性），
-			// 服务器建议下载已在 navigationAction 层用 shouldPerformDownload 处理。
-			let responseURL = navigationResponse.response.url
-			let shouldDownload = responseURL.map(Self.isDownloadable) ?? false
+			// 触发下载的判定（覆盖「带扩展名 / 服务器建议 / Content-Disposition / 二进制 Content-Type / 不可渲染且非 HTML」）：
+			// 既让不带扩展名的脚本下载、JS 触发、302 重定向后无扩展名的下载也能触发，
+			// 又避免把自签服务器返回的 HTML 错误页误当下载白屏。
+			let response = navigationResponse.response
+			let http = response as? HTTPURLResponse
+			let responseURL = response.url
+			let extDownloadable = responseURL.map(Self.isDownloadable) ?? false
+
+			var shouldDownload = extDownloadable
+			if #available(iOS 15.0, *) {
+				shouldDownload = shouldDownload || navigationResponse.shouldPerformDownload
+			}
+			// Content-Disposition: attachment / filename=
+			if let cd = http?.allHeaderFields["Content-Disposition"] as? String {
+				let lower = cd.lowercased()
+				if lower.contains("attachment") || lower.contains("filename=") {
+					shouldDownload = true
+				}
+			}
+			// 兜底：WKWebView 无法渲染 且 响应非 HTML → 视为二进制文件下载。
+			// 用 canShowMIMEType 而非「Content-Type 以 application/ 开头」，避免把 JSON/API 等
+			// 普通 application/* 响应误判成下载；HTML 恒可渲染，已被排除。
+			let mime = ((http?.mimeType) ?? response.mimeType)?.lowercased() ?? ""
+			let notRenderable = !navigationResponse.canShowMIMEType && mime != "text/html"
+			shouldDownload = shouldDownload || notRenderable
+
+			os_log(.info, log: .zBrowserDownload,
+				   "navResponse ext=%{public}@ mime=%{public}@ canShow=%d download=%d",
+				   extDownloadable ? "yes" : "no", mime, navigationResponse.canShowMIMEType ? 1 : 0, shouldDownload ? 1 : 0)
+
 			decisionHandler(shouldDownload ? .download : .allow)
 		}
 
 		func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
 			download.delegate = DownloadManager.shared
-			if let u = navigationAction.request.url { DownloadManager.shared._setWKOriginalURL(u, for: download) }
+			if let u = navigationAction.request.url {
+				DownloadManager.shared._setWKOriginalURL(u, for: download)
+				os_log(.info, log: .zBrowserDownload, "didBecomeDownload(from action) url=%{public}@", u.absoluteString)
+			}
 		}
 
 		func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
 			download.delegate = DownloadManager.shared
-			if let u = navigationResponse.response.url { DownloadManager.shared._setWKOriginalURL(u, for: download) }
+			if let u = navigationResponse.response.url {
+				DownloadManager.shared._setWKOriginalURL(u, for: download)
+				os_log(.info, log: .zBrowserDownload, "didBecomeDownload(from response) url=%{public}@", u.absoluteString)
+			}
 		}
 	}
 }

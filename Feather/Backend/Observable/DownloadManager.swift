@@ -10,12 +10,21 @@ import Combine
 import UIKit.UIImpactFeedbackGenerator
 import BackgroundTasks
 import WebKit
+import os
 
-class Download: Identifiable, @unchecked Sendable {
+/// 下载状态：用于列表展示「继续」按钮与断点续传。
+enum DownloadState: Int, Codable {
+	case downloading = 0
+	case failed = 1
+	case completed = 2
+}
+
+class Download: Identifiable, ObservableObject, @unchecked Sendable {
 	@Published var progress: Double = 0.0
 	@Published var bytesDownloaded: Int64 = 0
 	@Published var totalBytes: Int64 = 0
 	@Published var unpackageProgress: Double = 0.0
+	@Published var state: DownloadState = .downloading
 	
 	var overallProgress: Double {
 		onlyArchiving
@@ -24,7 +33,8 @@ class Download: Identifiable, @unchecked Sendable {
 	}
 	
 	var task: URLSessionDataTask?
-	// 不再使用 resumeData（dataTask 无原生断点续传，按需求接受此代价）
+	/// WKDownload 失败时由系统回传的续传数据（备用；实际续传走 dataTask Range 通道）。
+	var resumeData: Data?
 	
 	var destinationURL: URL?
 	var bytesReceived: Int64 = 0
@@ -133,8 +143,22 @@ class DownloadManager: NSObject, ObservableObject {
 	func resumeDownload(_ download: Download) {
 		_closeHandle(for: download.id)
 		download.task?.cancel()
-		let task = _session.dataTask(with: download.url)
+
+		// 断点续传：已下载部分且目标文件仍存在 → 带 Range 头从断点续写。
+		var request = URLRequest(url: download.url)
+		if download.bytesReceived > 0,
+		   let dest = download.destinationURL,
+		   FileManager.default.fileExists(atPath: dest.path) {
+			request.setValue("bytes=\(download.bytesReceived)-", forHTTPHeaderField: "Range")
+			os_log(.info, log: .zBrowserDownload, "resumeDownload: Range bytes=%lld url=%{public}@", download.bytesReceived, download.url.absoluteString)
+		} else {
+			// 无断点可续 → 从头来（重置偏移）
+			download.bytesReceived = 0
+		}
+
+		let task = _session.dataTask(with: request)
 		download.task = task
+		download.state = .downloading
 		task.resume()
 		#if !targetEnvironment(macCatalyst)
 		_updateBackgroundAudioState()
@@ -273,15 +297,29 @@ extension DownloadManager: URLSessionDataDelegate {
 		guard let download = getDownload(by: dataTask) else {
 			completionHandler(.cancel); return
 		}
-		let total = response.expectedContentLength
+		let http = response as? HTTPURLResponse
+		let isResume = (http?.statusCode == 206) && download.bytesReceived > 0
+		os_log(.info, log: .zBrowserDownload, "didReceiveResponse status=%d resume=%{public}@", http?.statusCode ?? -1, isResume ? "yes" : "no")
+
+		let remaining = response.expectedContentLength
 		DispatchQueue.main.async {
-			download.totalBytes = total
-			download.bytesDownloaded = 0
-			download.bytesReceived = 0
+			if isResume {
+				// 206：expectedContentLength 为剩余字节，总大小 = 已下 + 剩余
+				if remaining > 0 { download.totalBytes = download.bytesReceived + remaining }
+				download.bytesDownloaded = download.bytesReceived
+			} else {
+				download.totalBytes = remaining
+				download.bytesDownloaded = 0
+				download.bytesReceived = 0
+			}
 		}
 		if let url = download.destinationURL,
 		   let handle = try? FileHandle(forWritingTo: url) {
-			handle.truncateFile(atOffset: 0)
+			if isResume {
+				handle.seekToEndOfFile()      // 续写：从已下载末尾追加
+			} else {
+				handle.truncateFile(atOffset: 0)
+			}
 			_setHandle(handle, for: download.id)
 		}
 		completionHandler(.allow)
@@ -309,16 +347,19 @@ extension DownloadManager: URLSessionDataDelegate {
 		_closeHandle(for: download.id)
 		
 		if let urlError = error as? URLError, urlError.code == .cancelled {
+			// 用户取消：cancelDownload 已删条目的话此处 download 不存在；若仍在则保留为可续传
 			return
 		}
 		if let error {
-			if let dest = download.destinationURL { try? FileManager.default.removeFileIfNeeded(at: dest) }
-			_removeDownload(download)
+			os_log(.error, log: .zBrowserDownload, "download failed: %{public}@", error.localizedDescription)
+			// 保留条目与已下载的部分文件，标记失败，便于「继续」断点续传
+			DispatchQueue.main.async { download.state = .failed }
 			return
 		}
 		
 		guard let url = download.destinationURL else { return }
 		DispatchQueue.main.async {
+			download.state = .completed
 			if self._isImportable(download.fileName) {
 				try? self.handlePachageFile(url: url, dl: download)
 			} else {
@@ -337,17 +378,29 @@ extension DownloadManager: WKDownloadDelegate {
 		let baseName: String
 		if !(suggestedFilename as NSString).deletingPathExtension.isEmpty {
 			baseName = suggestedFilename
+		} else if let last = originalURL?.lastPathComponent,
+				  !last.isEmpty,
+				  (last as NSString).pathExtension.lowercased() != "" {
+			baseName = last
+		} else if let ext = (response as? HTTPURLResponse)?.mimeType.flatMap({ Self._extension(forMIME: $0) }),
+				  !ext.isEmpty {
+			baseName = "download.\(ext)"
 		} else {
-			baseName = originalURL?.lastPathComponent ?? "download"
+			baseName = "download"
 		}
+		os_log(.info, log: .zBrowserDownload, "decideDestination suggested=%{public}@ baseName=%{public}@", suggestedFilename, baseName)
+
 		let destination = _uniqueDownloadURL(for: baseName)
 		try? FileManager.default.createDirectoryIfNeeded(at: FileManager.default.downloadsDir)
 		FileManager.default.excludeFromBackup(destination)
-		
-		let dl = Download(id: UUID().uuidString, url: destination)
+
+		// 注意：Download.url 必须是「远程源地址」，续传(resumeDownload)会据此发起 Range 请求；
+		// 本地落点放在 destinationURL。若误把 url 设为本地文件，续传会从文件 URL 拉取而失败。
+		let remoteURL = originalURL ?? response.url ?? destination
+		let dl = Download(id: UUID().uuidString, url: remoteURL)
 		dl.destinationURL = destination
 		_setWKDownload(dl, for: download)
-		
+
 		DispatchQueue.main.async {
 			self.downloads.append(dl)
 			#if !targetEnvironment(macCatalyst)
@@ -367,6 +420,7 @@ extension DownloadManager: WKDownloadDelegate {
 		guard let dl = _wkDownload(for: download) else { return }
 		DispatchQueue.main.async {
 			dl.bytesDownloaded = totalBytesWritten
+			dl.bytesReceived = totalBytesWritten   // 供断点续传计算 Range 偏移
 			dl.totalBytes = totalBytesExpected
 			dl.progress = totalBytesExpected > 0 ? Double(totalBytesWritten) / Double(totalBytesExpected) : progress
 			#if !targetEnvironment(macCatalyst)
@@ -379,17 +433,20 @@ extension DownloadManager: WKDownloadDelegate {
 	
 	func downloadDidFinish(_ download: WKDownload) {
 		guard let dl = _wkDownload(for: download), let url = dl.destinationURL else { return }
+		DispatchQueue.main.async { dl.state = .completed }
 		if _isImportable(dl.fileName) {
 			try? handlePachageFile(url: url, dl: dl)
 		} else {
 			_removeDownload(dl)
 		}
 	}
-	
+
 	func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
 		guard let dl = _wkDownload(for: download) else { return }
-		if let dest = dl.destinationURL { try? FileManager.default.removeFileIfNeeded(at: dest) }
-		_removeDownload(dl)
+		os_log(.error, log: .zBrowserDownload, "WKDownload failed: %{public}@", error.localizedDescription)
+		// 留存续传数据（备用）；保留部分文件与条目，标记失败以便「继续」走 dataTask Range 续传
+		dl.resumeData = resumeData
+		DispatchQueue.main.async { dl.state = .failed }
 	}
 }
 
@@ -413,4 +470,42 @@ extension DownloadManager {
 
 extension Notification.Name {
 	static let zDownloadStarted = Notification.Name("ZDownloadStarted")
+}
+
+extension OSLog {
+	/// 浏览器下载诊断日志：真机 Console.app 过滤 "Zinstall.BrowserDownload" 即可查看。
+	static let zBrowserDownload = OSLog(subsystem: "Zinstall.BrowserDownload", category: "BrowserDownload")
+}
+
+extension DownloadManager {
+	/// 常见下载型 MIME → 扩展名（落点无扩展名时兜底）。
+	private static let _mimeToExt: [String: String] = [
+		"application/octet-stream": "bin",
+		"application/zip": "zip",
+		"application/x-zip": "zip",
+		"application/x-zip-compressed": "zip",
+		"application/java-archive": "jar",
+		"application/vnd.android.package-archive": "apk",
+		"application/x-apple-appstore": "ipa",
+		"application/vnd.rar": "rar",
+		"application/x-rar-compressed": "rar",
+		"application/x-tipa": "tipa",
+		"application/x-debian-package": "deb",
+		"application/gzip": "gz",
+		"application/x-7z-compressed": "7z",
+		"application/pdf": "pdf",
+		"image/ipa": "ipa"
+	]
+
+	static func _extension(forMIME mime: String) -> String {
+		let m = mime.lowercased().trimmingCharacters(in: .whitespaces)
+		if let ext = _mimeToExt[m] { return ext }
+		if m.contains("zip") { return "zip" }
+		if m.contains("tipa") { return "tipa" }
+		if m.contains("ipa") || m.contains("ios") { return "ipa" }
+		if m.contains("apk") { return "apk" }
+		if m.contains("rar") { return "rar" }
+		if m.contains("deb") || m.contains("tweak") { return "deb" }
+		return ""
+	}
 }
