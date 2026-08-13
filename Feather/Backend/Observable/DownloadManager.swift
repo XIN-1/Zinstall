@@ -144,7 +144,7 @@ class DownloadManager: NSObject, ObservableObject {
 	func cancelDownload(_ download: Download) {
 		_closeHandle(for: download.id)
 		download.task?.cancel()
-		try? FileManager.default.removeFileIfNeeded(at: download.destinationURL) // 删半成品
+		if let dest = download.destinationURL { try? FileManager.default.removeFileIfNeeded(at: dest) } // 删半成品
 		_removeDownload(download)
 	}
 	
@@ -312,7 +312,7 @@ extension DownloadManager: URLSessionDataDelegate {
 			return
 		}
 		if let error {
-			try? FileManager.default.removeFileIfNeeded(at: download.destinationURL)
+			if let dest = download.destinationURL { try? FileManager.default.removeFileIfNeeded(at: dest) }
 			_removeDownload(download)
 			return
 		}
@@ -388,7 +388,7 @@ extension DownloadManager: WKDownloadDelegate {
 	
 	func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
 		guard let dl = _wkDownload(for: download) else { return }
-		try? FileManager.default.removeFileIfNeeded(at: dl.destinationURL)
+		if let dest = dl.destinationURL { try? FileManager.default.removeFileIfNeeded(at: dest) }
 		_removeDownload(dl)
 	}
 }
