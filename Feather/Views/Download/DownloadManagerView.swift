@@ -425,10 +425,20 @@ private struct BrowserView: UIViewRepresentable {
 					 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
 			guard let url = navigationAction.request.url else { decisionHandler(.allow); return }
 
-			// 新窗口（target="_blank"）→ 在当前视图打开
+			// 新窗口（target="_blank"）：若是下载链接则转下载，否则在当前视图打开
 			if navigationAction.targetFrame == nil {
-				webView.load(navigationAction.request)
-				decisionHandler(.cancel)
+				let isDl: Bool
+				if #available(iOS 14.5, *) {
+					isDl = Self.isDownloadable(url) || navigationAction.shouldPerformDownload
+				} else {
+					isDl = Self.isDownloadable(url)
+				}
+				if isDl {
+					decisionHandler(.download)
+				} else {
+					webView.load(navigationAction.request)
+					decisionHandler(.cancel)
+				}
 				return
 			}
 
@@ -453,19 +463,30 @@ private struct BrowserView: UIViewRepresentable {
 			let http = response as? HTTPURLResponse
 			let responseURL = response.url
 			let extDownloadable = responseURL.map(Self.isDownloadable) ?? false
-
-			var shouldDownload = extDownloadable
-			// Content-Disposition: attachment / filename=
-			if let cd = http?.allHeaderFields["Content-Disposition"] as? String {
-				let lower = cd.lowercased()
-				if lower.contains("attachment") || lower.contains("filename=") {
-					shouldDownload = true
-				}
-			}
-			// 兜底：WKWebView 无法渲染 且 响应非 HTML → 视为二进制文件下载。
-			// 用 canShowMIMEType 而非「Content-Type 以 application/ 开头」，避免把 JSON/API 等
-			// 普通 application/* 响应误判成下载；HTML 恒可渲染，已被排除。
 			let mime = ((http?.mimeType) ?? response.mimeType)?.lowercased() ?? ""
+
+			// 1) 明显是文件的 MIME 类型（无论 WebKit 能否渲染，一律当下载）
+			let fileMimes: Set<String> = [
+				"application/octet-stream", "binary/octet-stream",
+				"application/zip", "application/x-zip-compressed",
+				"application/x-rar-compressed", "application/rar", "application/vnd.rar",
+				"application/java-archive", "application/gzip", "application/x-gzip",
+				"application/x-7z-compressed", "application/x-tar",
+				"application/x-apple-appstore", "application/vnd.android.package-archive",
+				"application/x-msdownload", "application/force-download", "application/x-download",
+				"application/vnd.apple.mobileprovision", "application/x-ipa",
+				"application/x-debian-package"
+			]
+			var shouldDownload = extDownloadable || fileMimes.contains(mime)
+
+			// 2) Content-Disposition: attachment / filename=（大小写不敏感取值）
+			if let cd = http?.value(forHTTPHeaderField: "Content-Disposition")?.lowercased(),
+			   cd.contains("attachment") || cd.contains("filename=") {
+				shouldDownload = true
+			}
+
+			// 3) 兜底：WebKit 无法渲染 且 响应非 HTML → 视为二进制文件下载。
+			// 排除 HTML（自签服务器错误页恒可渲染，避免误当下载白屏）。
 			let notRenderable = !navigationResponse.canShowMIMEType && mime != "text/html"
 			shouldDownload = shouldDownload || notRenderable
 
