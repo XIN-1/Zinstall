@@ -77,6 +77,10 @@ struct DownloadItemView: View {
 					Text(verbatim: "\(Int(overallProgress * 100))%")
 						.contentTransition(.numericText())
 				}
+				if download.state == .downloading {
+					Text(verbatim: download.downloadSpeed.formattedSpeed)
+						.contentTransition(.numericText())
+				}
 				Spacer()
 				if isIndeterminate {
 					Text(verbatim: download.bytesDownloaded.formattedByteCount)
@@ -90,5 +94,16 @@ struct DownloadItemView: View {
 			.foregroundColor(.secondary)
 		}
 		.padding(.vertical, 4)
+	}
+}
+
+extension Int64 {
+	var formattedSpeed: String {
+		let b = Double(self)
+		let kb = b / 1024
+		let mb = kb / 1024
+		if mb >= 1 { return String(format: "%.1f MB/s", mb) }
+		if kb >= 1 { return String(format: "%.0f KB/s", kb) }
+		return "\(Int(b)) B/s"
 	}
 }

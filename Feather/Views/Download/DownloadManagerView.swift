@@ -434,7 +434,9 @@ private struct BrowserView: UIViewRepresentable {
 					isDl = Self.isDownloadable(url)
 				}
 				if isDl {
-					decisionHandler(.download)
+					DownloadManager.shared.startDownload(from: navigationAction.request)
+					NotificationCenter.default.post(name: .zDownloadStarted, object: url)
+					decisionHandler(.cancel)
 				} else {
 					webView.load(navigationAction.request)
 					decisionHandler(.cancel)
@@ -448,10 +450,16 @@ private struct BrowserView: UIViewRepresentable {
 			} else {
 				shouldDownload = Self.isDownloadable(url)
 			}
-			os_log(.info, log: .zBrowserDownload, "navAction url=%{public}@ ext=%{public}@ download=%d",
-				   url.absoluteString, Self.isDownloadable(url) ? "yes" : "no", shouldDownload ? 1 : 0)
+		os_log(.info, log: .zBrowserDownload, "navAction url=%{public}@ ext=%{public}@ download=%d",
+			   url.absoluteString, Self.isDownloadable(url) ? "yes" : "no", shouldDownload ? 1 : 0)
 
-			decisionHandler(shouldDownload ? .download : .allow)
+		if shouldDownload {
+			DownloadManager.shared.startDownload(from: navigationAction.request)
+			NotificationCenter.default.post(name: .zDownloadStarted, object: url)
+			decisionHandler(.cancel)
+		} else {
+			decisionHandler(.allow)
+		}
 		}
 
 		func webView(_ webView: WKWebView, decidePolicyFor navigationResponse: WKNavigationResponse,
@@ -490,27 +498,20 @@ private struct BrowserView: UIViewRepresentable {
 			let notRenderable = !navigationResponse.canShowMIMEType && mime != "text/html"
 			shouldDownload = shouldDownload || notRenderable
 
-			os_log(.info, log: .zBrowserDownload,
-				   "navResponse ext=%{public}@ mime=%{public}@ canShow=%d download=%d",
-				   extDownloadable ? "yes" : "no", mime, navigationResponse.canShowMIMEType ? 1 : 0, shouldDownload ? 1 : 0)
+		os_log(.info, log: .zBrowserDownload,
+			   "navResponse ext=%{public}@ mime=%{public}@ canShow=%d download=%d",
+			   extDownloadable ? "yes" : "no", mime, navigationResponse.canShowMIMEType ? 1 : 0, shouldDownload ? 1 : 0)
 
-			decisionHandler(shouldDownload ? .download : .allow)
+		let dlURL = response.url ?? URL(string: "about:blank")!
+		if shouldDownload {
+			DownloadManager.shared.startDownload(from: URLRequest(url: dlURL))
+			NotificationCenter.default.post(name: .zDownloadStarted, object: dlURL)
+			decisionHandler(.cancel)
+		} else {
+			decisionHandler(.allow)
+		}
 		}
 
-		func webView(_ webView: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) {
-			download.delegate = DownloadManager.shared
-			if let u = navigationAction.request.url {
-				DownloadManager.shared._setWKOriginalURL(u, for: download)
-				os_log(.info, log: .zBrowserDownload, "didBecomeDownload(from action) url=%{public}@", u.absoluteString)
-			}
-		}
-
-		func webView(_ webView: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) {
-			download.delegate = DownloadManager.shared
-			if let u = navigationResponse.response.url {
-				DownloadManager.shared._setWKOriginalURL(u, for: download)
-				os_log(.info, log: .zBrowserDownload, "didBecomeDownload(from response) url=%{public}@", u.absoluteString)
-			}
-		}
+		// 浏览器下载已统一走 DownloadManager.startDownload → URLSessionDataTask，不再使用 WKDownload。
 	}
 }

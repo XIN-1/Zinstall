@@ -9,7 +9,6 @@ import Foundation
 import Combine
 import UIKit.UIImpactFeedbackGenerator
 import BackgroundTasks
-import WebKit
 import os
 
 /// 下载状态：用于列表展示「继续」按钮与断点续传。
@@ -23,6 +22,7 @@ class Download: Identifiable, ObservableObject, @unchecked Sendable {
 	@Published var progress: Double = 0.0
 	@Published var bytesDownloaded: Int64 = 0
 	@Published var totalBytes: Int64 = 0
+	@Published var downloadSpeed: Int64 = 0   // 字节/秒
 	@Published var unpackageProgress: Double = 0.0
 	@Published var state: DownloadState = .downloading
 	
@@ -33,8 +33,6 @@ class Download: Identifiable, ObservableObject, @unchecked Sendable {
 	}
 	
 	var task: URLSessionDataTask?
-	/// WKDownload 失败时由系统回传的续传数据（备用；实际续传走 dataTask Range 通道）。
-	var resumeData: Data?
 	
 	var destinationURL: URL?
 	var bytesReceived: Int64 = 0
@@ -70,8 +68,12 @@ class DownloadManager: NSObject, ObservableObject {
 	
 	private var _session: URLSession!
 	/// 进度采样定时器：每 0.2s 读取各进行中下载的目标文件实际大小，
-	/// 直接驱动 bytesDownloaded / progress，保证 UI 实时刷新（不依赖 WKDownload 回调频率）。
+	/// 直接驱动 bytesDownloaded / progress，保证 UI 实时刷新（不依赖回调频率）。
 	private var _progressTimer: Timer?
+	/// 速度采样状态（EMA 平滑用）
+	private var _lastSampledSize: [String: Int64] = [:]
+	private var _lastSampleTime: [String: CFAbsoluteTime] = [:]
+	private var _smoothedSpeed: [String: Int64] = [:]
 	
 	#if !targetEnvironment(macCatalyst)
 	private func _updateBackgroundAudioState() {
@@ -97,6 +99,15 @@ class DownloadManager: NSObject, ObservableObject {
 		id: String = UUID().uuidString,
 		sourceProvenance: SourceAppProvenance? = nil
 	) -> Download {
+		startDownload(from: URLRequest(url: url), id: id, sourceProvenance: sourceProvenance)
+	}
+	
+	func startDownload(
+		from request: URLRequest,
+		id: String = UUID().uuidString,
+		sourceProvenance: SourceAppProvenance? = nil
+	) -> Download {
+		let url = request.url ?? URL(string: "about:blank")!
 		let requestHasSourceProvenance = sourceProvenance != nil
 		if let existingDownload = downloads.first(where: {
 			$0.url == url && ($0.sourceProvenance != nil) == requestHasSourceProvenance
@@ -110,22 +121,15 @@ class DownloadManager: NSObject, ObservableObject {
 		download.destinationURL = destination
 		
 		try? FileManager.default.createDirectoryIfNeeded(at: FileManager.default.downloadsDir)
-		FileManager.default.createFile(atPath: destination.path, contents: nil) // ✅ 立即可见（0 字节）
-		FileManager.default.excludeFromBackup(destination)                       // 大 IPA 排除 iCloud 备份
+		FileManager.default.createFile(atPath: destination.path, contents: nil) // 立即可见（0 字节）
+		FileManager.default.excludeFromBackup(destination)
 		
-		let task = _session.dataTask(with: url)
+		let task = _session.dataTask(with: request)
 		download.task = task
 		task.resume()
 		downloads.append(download)
 		_ensureProgressTimer()
-		
-		#if !targetEnvironment(macCatalyst)
-		if #available(iOS 26.0, *) {
-			BackgroundTaskManager.shared.startTask(for: id, filename: download.fileName)
-		} else {
-			_updateBackgroundAudioState()
-		}
-		#endif
+		_startBackground(for: download)
 		
 		return download
 	}
@@ -147,7 +151,11 @@ class DownloadManager: NSObject, ObservableObject {
 	func resumeDownload(_ download: Download) {
 		_closeHandle(for: download.id)
 		download.task?.cancel()
-
+		// 重置速度采样基线，避免用旧文件大小算出负速度
+		_lastSampledSize[download.id] = nil
+		_lastSampleTime[download.id] = nil
+		_smoothedSpeed[download.id] = nil
+		
 		// 断点续传：已下载部分且目标文件仍存在 → 带 Range 头从断点续写。
 		var request = URLRequest(url: download.url)
 		if download.bytesReceived > 0,
@@ -159,7 +167,7 @@ class DownloadManager: NSObject, ObservableObject {
 			// 无断点可续 → 从头来（重置偏移）
 			download.bytesReceived = 0
 		}
-
+		
 		let task = _session.dataTask(with: request)
 		download.task = task
 		download.state = .downloading
@@ -173,6 +181,7 @@ class DownloadManager: NSObject, ObservableObject {
 	func cancelDownload(_ download: Download) {
 		_closeHandle(for: download.id)
 		download.task?.cancel()
+		_clearSpeedSamples(for: download.id)
 		if let dest = download.destinationURL { try? FileManager.default.removeFileIfNeeded(at: dest) } // 删半成品
 		_removeDownload(download)
 	}
@@ -239,11 +248,12 @@ class DownloadManager: NSObject, ObservableObject {
 		}
 	}
 
-	/// 读取进行中下载的目标文件真实大小，更新进度；若总大小已知则算出百分比，
-	/// 否则仅更新已下载字节数（视图显示「下载中」+ 已下载字节）。
+	/// 读取进行中下载的目标文件真实大小，更新进度与速度；
+	/// 若总大小已知则算出百分比，否则仅更新已下载字节数（视图显示「下载中」+ 已下载字节）。
 	private func _sampleActiveDownloads() {
 		var anyActive = false
 		var changed = false
+		let now = CFAbsoluteTimeGetCurrent()
 		for dl in downloads where dl.state == .downloading {
 			anyActive = true
 			guard let dest = dl.destinationURL else { continue }
@@ -256,16 +266,35 @@ class DownloadManager: NSObject, ObservableObject {
 				}
 				changed = true
 			}
+			// 速度：文件大小增量 / 时间差，EMA 平滑抑制跳变
+			let prevSize = _lastSampledSize[dl.id] ?? size
+			let prevT = _lastSampleTime[dl.id] ?? now
+			let dt = max(0.001, now - prevT)
+			let raw = Int64(Double(size - prevSize) / dt)
+			let prevEMA = _smoothedSpeed[dl.id] ?? 0
+			let ema = Int64(Double(prevEMA) * 0.7 + Double(max(0, raw)) * 0.3)
+			if ema != dl.downloadSpeed { dl.downloadSpeed = ema }
+			_lastSampledSize[dl.id] = size
+			_lastSampleTime[dl.id] = now
+			_smoothedSpeed[dl.id] = ema
 		}
-		// 强制列表整体重渲染，兜底第三方列表组件不响应子项 @ObservedObject 的情况
-		if changed { self.objectWillChange.send() }
+		// 强制列表整体重渲染（兜底第三方列表组件不响应子项 @ObservedObject）；
+		// 即便字节未变也重绘，使速度在停滞时平滑衰减到 0。
+		if changed || anyActive { self.objectWillChange.send() }
 		if !anyActive {
 			_progressTimer?.invalidate()
 			_progressTimer = nil
 		}
 	}
 	
+	private func _clearSpeedSamples(for id: String) {
+		_lastSampledSize[id] = nil
+		_lastSampleTime[id] = nil
+		_smoothedSpeed[id] = nil
+	}
+
 	private func _removeDownload(_ download: Download) {
+		_clearSpeedSamples(for: download.id)
 		DispatchQueue.main.async {
 			if let index = self.getDownloadIndex(by: download.id) {
 				self.downloads.remove(at: index)
@@ -393,18 +422,25 @@ extension DownloadManager: URLSessionDataDelegate {
 		
 		if let urlError = error as? URLError, urlError.code == .cancelled {
 			// 用户取消：cancelDownload 已删条目的话此处 download 不存在；若仍在则保留为可续传
+			DispatchQueue.main.async { self._clearSpeedSamples(for: download.id) }
 			return
 		}
 		if let error {
 			os_log(.error, log: .zBrowserDownload, "download failed: %{public}@", error.localizedDescription)
 			// 保留条目与已下载的部分文件，标记失败，便于「继续」断点续传
-			DispatchQueue.main.async { download.state = .failed }
+			DispatchQueue.main.async {
+				download.downloadSpeed = 0
+				download.state = .failed
+				self._clearSpeedSamples(for: download.id)
+			}
 			return
 		}
 		
 		guard let url = download.destinationURL else { return }
 		DispatchQueue.main.async {
+			download.downloadSpeed = 0
 			download.state = .completed
+			self._clearSpeedSamples(for: download.id)
 			if self._isImportable(download.fileName) {
 				try? self.handlePachageFile(url: url, dl: download)
 			} else {
@@ -414,106 +450,7 @@ extension DownloadManager: URLSessionDataDelegate {
 	}
 }
 
-extension DownloadManager: WKDownloadDelegate {
-	func download(_ download: WKDownload,
-				  decideDestinationUsing response: URLResponse,
-				  suggestedFilename: String,
-				  completionHandler: @escaping (URL?) -> Void) {
-		let originalURL = _wkOriginalURL(for: download)
-		let baseName: String
-		if !(suggestedFilename as NSString).deletingPathExtension.isEmpty {
-			baseName = suggestedFilename
-		} else if let last = originalURL?.lastPathComponent,
-				  !last.isEmpty,
-				  (last as NSString).pathExtension.lowercased() != "" {
-			baseName = last
-		} else if let ext = (response as? HTTPURLResponse)?.mimeType.flatMap({ Self._extension(forMIME: $0) }),
-				  !ext.isEmpty {
-			baseName = "download.\(ext)"
-		} else {
-			baseName = "download"
-		}
-		os_log(.info, log: .zBrowserDownload, "decideDestination suggested=%{public}@ baseName=%{public}@", suggestedFilename, baseName)
-
-		let destination = _uniqueDownloadURL(for: baseName)
-		try? FileManager.default.createDirectoryIfNeeded(at: FileManager.default.downloadsDir)
-		FileManager.default.excludeFromBackup(destination)
-
-		// 注意：Download.url 必须是「远程源地址」，续传(resumeDownload)会据此发起 Range 请求；
-		// 本地落点放在 destinationURL。若误把 url 设为本地文件，续传会从文件 URL 拉取而失败。
-		let remoteURL = originalURL ?? response.url ?? destination
-		let dl = Download(id: UUID().uuidString, url: remoteURL)
-		dl.destinationURL = destination
-		_setWKDownload(dl, for: download)
-
-		DispatchQueue.main.async {
-			self.downloads.append(dl)
-			self._ensureProgressTimer()
-			#if !targetEnvironment(macCatalyst)
-			if #available(iOS 26.0, *) {
-				BackgroundTaskManager.shared.startTask(for: dl.id, filename: dl.fileName)
-			} else {
-				self._updateBackgroundAudioState()
-			}
-			#endif
-			NotificationCenter.default.post(name: .zDownloadStarted, object: dl.url)
-		}
-		completionHandler(destination)
-	}
-	
-	func download(_ download: WKDownload, didReceive progress: Double,
-				  totalBytesExpected: Int64, totalBytesWritten: Int64) {
-		guard let dl = _wkDownload(for: download) else { return }
-		DispatchQueue.main.async {
-			dl.bytesDownloaded = totalBytesWritten
-			dl.bytesReceived = totalBytesWritten   // 供断点续传计算 Range 偏移
-			dl.totalBytes = max(0, totalBytesExpected)
-			dl.progress = totalBytesExpected > 0 ? Double(totalBytesWritten) / Double(totalBytesExpected) : progress
-			#if !targetEnvironment(macCatalyst)
-			if #available(iOS 26.0, *) {
-				BackgroundTaskManager.shared.updateProgress(for: dl.id, progress: dl.overallProgress)
-			}
-			#endif
-		}
-	}
-	
-	func downloadDidFinish(_ download: WKDownload) {
-		guard let dl = _wkDownload(for: download), let url = dl.destinationURL else { return }
-		DispatchQueue.main.async { dl.state = .completed }
-		if _isImportable(dl.fileName) {
-			try? handlePachageFile(url: url, dl: dl)
-		} else {
-			_removeDownload(dl)
-		}
-	}
-
-	func download(_ download: WKDownload, didFailWithError error: Error, resumeData: Data?) {
-		guard let dl = _wkDownload(for: download) else { return }
-		os_log(.error, log: .zBrowserDownload, "WKDownload failed: %{public}@", error.localizedDescription)
-		// 留存续传数据（备用）；保留部分文件与条目，标记失败以便「继续」走 dataTask Range 续传
-		dl.resumeData = resumeData
-		DispatchQueue.main.async { dl.state = .failed }
-	}
-}
-
-// MARK: - WKDownload ↔ Download 关联
-private var _wkDownloadKey: UInt8 = 0
-private var _wkOriginalURLKey: UInt8 = 0
-extension DownloadManager {
-	func _setWKDownload(_ dl: Download, for wk: WKDownload) {
-		objc_setAssociatedObject(wk, &_wkDownloadKey, dl, .OBJC_ASSOCIATION_RETAIN)
-	}
-	func _wkDownload(for wk: WKDownload) -> Download? {
-		objc_getAssociatedObject(wk, &_wkDownloadKey) as? Download
-	}
-	func _setWKOriginalURL(_ url: URL, for wk: WKDownload) {
-		objc_setAssociatedObject(wk, &_wkOriginalURLKey, url, .OBJC_ASSOCIATION_RETAIN)
-	}
-	func _wkOriginalURL(for wk: WKDownload) -> URL? {
-		objc_getAssociatedObject(wk, &_wkOriginalURLKey) as? URL
-	}
-}
-
+// MARK: - 下载触发诊断日志
 extension Notification.Name {
 	static let zDownloadStarted = Notification.Name("ZDownloadStarted")
 }
