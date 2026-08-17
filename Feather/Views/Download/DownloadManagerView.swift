@@ -310,7 +310,16 @@ private struct _DownloadRow: View {
 		HStack(spacing: 12) {
 			DownloadItemView(download: download)
 
-			if download.state == .failed {
+			if download.state == .downloading {
+				Button {
+					DownloadManager.shared.pauseDownload(download)
+				} label: {
+					Image(systemName: "pause.circle.fill")
+						.font(.title3)
+						.foregroundStyle(.tint)
+				}
+				.buttonStyle(.borderless)
+			} else if download.state == .failed || download.state == .paused {
 				Button {
 					DownloadManager.shared.resumeDownload(download)
 				} label: {

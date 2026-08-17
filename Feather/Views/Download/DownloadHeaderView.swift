@@ -71,7 +71,13 @@ struct DownloadItemView: View {
 			}
 
 			HStack {
-				if isIndeterminate {
+				if download.state == .paused {
+					Text(verbatim: "已暂停")
+						.foregroundStyle(.secondary)
+				} else if download.state == .failed {
+					Text(verbatim: "导入失败")
+						.foregroundStyle(.red)
+				} else if isIndeterminate {
 					Text(verbatim: "下载中")
 				} else {
 					Text(verbatim: "\(Int(overallProgress * 100))%")
@@ -82,7 +88,7 @@ struct DownloadItemView: View {
 						.contentTransition(.numericText())
 				}
 				Spacer()
-				if isIndeterminate {
+				if isIndeterminate && download.state != .failed && download.state != .paused {
 					Text(verbatim: download.bytesDownloaded.formattedByteCount)
 						.contentTransition(.numericText())
 				} else {

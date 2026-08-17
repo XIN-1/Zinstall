@@ -14,8 +14,9 @@ import os
 /// 下载状态：用于列表展示「继续」按钮与断点续传。
 enum DownloadState: Int, Codable {
 	case downloading = 0
-	case failed = 1
-	case completed = 2
+	case paused = 1
+	case failed = 2
+	case completed = 3
 }
 
 class Download: Identifiable, ObservableObject, @unchecked Sendable {
@@ -44,6 +45,8 @@ class Download: Identifiable, ObservableObject, @unchecked Sendable {
 	var sourceProvenance: SourceAppProvenance?
 	/// 入口标记：manual / browser-navAction / browser-navResponse，便于诊断两条路为何表现不同。
 	var entryPoint: String = "manual"
+	/// 导入/失败时的错误描述，便于在列表中提示并支持「重试」。
+	var errorMessage: String?
 	
 	init(
 		id: String,
@@ -192,6 +195,20 @@ class DownloadManager: NSObject, ObservableObject {
 		_clearSpeedSamples(for: download.id)
 		if let dest = download.destinationURL { try? FileManager.default.removeFileIfNeeded(at: dest) } // 删半成品
 		_removeDownload(download)
+	}
+
+	/// 暂停：取消当前数据任务但保留已下载文件与偏移，状态置为 .paused；
+	/// 续传时由 resumeDownload 用 Range 头从断点继续（与失败续传共用逻辑）。
+	func pauseDownload(_ download: Download) {
+		_closeHandle(for: download.id)
+		download.task?.cancel() // 触发 didCompleteWithError(.cancelled)：该分支不改状态、不删条目
+		_clearSpeedSamples(for: download.id)
+		download.downloadSpeed = 0
+		download.errorMessage = nil
+		download.state = .paused
+		#if !targetEnvironment(macCatalyst)
+		_updateBackgroundAudioState()
+		#endif
 	}
 	
 	func isManualDownload(_ string: String) -> Bool {
@@ -352,20 +369,25 @@ extension DownloadManager: URLSessionDataDelegate {
 	
 	func handlePachageFile(url: URL, dl: Download) throws {
 		FR.handlePackageFile(url, download: dl) { err in
-			if err != nil {
-				let generator = UINotificationFeedbackGenerator()
-				generator.notificationOccurred(.error)
-			}
-			
 			DispatchQueue.main.async {
-				if let index = DownloadManager.shared.getDownloadIndex(by: dl.id) {
+				guard let index = DownloadManager.shared.getDownloadIndex(by: dl.id) else { return }
+				if let err {
+					// 导入失败：保留在下载列表，标记失败并提示错误，便于「重试」断点续传
+					dl.downloadSpeed = 0
+					dl.state = .failed
+					dl.errorMessage = err.localizedDescription
+					let generator = UINotificationFeedbackGenerator()
+					generator.notificationOccurred(.error)
+					#if !targetEnvironment(macCatalyst)
+					self._updateBackgroundAudioState()
+					#endif
+				} else {
+					// 导入成功：移出下载列表（已写入资源库 Imported）
 					DownloadManager.shared.downloads.remove(at: index)
-					
 					#if !targetEnvironment(macCatalyst)
 					if #available(iOS 26.0, *) {
 						BackgroundTaskManager.shared.updateProgress(for: dl.id, progress: 1.0)
 					}
-					
 					self._updateBackgroundAudioState()
 					#endif
 				}
@@ -429,6 +451,21 @@ extension DownloadManager: URLSessionDataDelegate {
 				}
 			}.resume()
 		}
+		// 修正文件名：浏览器/重定向链接常不带扩展名，用 Content-Disposition / MIME 兜底，
+		// 确保 IPA/TIPA/ZIP 文件被识别并正确导入资源库（否则会静默移除、既不进列表也不进资源库）。
+		if !isResume,
+		   let newName = _resolveFileName(for: download, response: response),
+		   newName != download.fileName,
+		   let old = download.destinationURL {
+			let newDest = _uniqueDownloadURL(for: newName)
+			if newDest.path != old.path {
+				try? FileManager.default.moveItem(at: old, to: newDest)
+			}
+			download.destinationURL = newDest
+			download.fileName = newName
+			os_log(.info, log: .zBrowserDownload, "rename entry=%{public}@ -> %{public}@", download.entryPoint, newName)
+		}
+
 		if let url = download.destinationURL,
 		   let handle = try? FileHandle(forWritingTo: url) {
 			if isResume {
@@ -485,6 +522,9 @@ extension DownloadManager: URLSessionDataDelegate {
 			self._clearSpeedSamples(for: download.id)
 			if self._isImportable(download.fileName) {
 				try? self.handlePachageFile(url: url, dl: download)
+			} else if self._tryImportAsZip(url: url, download: download) {
+				// 无扩展名但实为 ZIP/IPA（PK 头）：重命名为 .zip 后再导入
+				try? self.handlePachageFile(url: download.destinationURL ?? url, dl: download)
 			} else {
 				self._removeDownload(download)
 			}
@@ -532,5 +572,83 @@ extension DownloadManager {
 		if m.contains("rar") { return "rar" }
 		if m.contains("deb") || m.contains("tweak") { return "deb" }
 		return ""
+	}
+}
+
+extension DownloadManager {
+	/// 从响应推导最终文件名：Content-Disposition → URL 末段 → MIME 兜底扩展名。
+	/// 解决浏览器/重定向链接不带扩展名、导致 IPA 无法被识别导入的问题。
+	private func _resolveFileName(for download: Download, response: URLResponse) -> String? {
+		let http = response as? HTTPURLResponse
+		var base: String?
+
+		if let cd = http?.value(forHTTPHeaderField: "Content-Disposition") {
+			base = Self._filenameFromContentDisposition(cd)
+		}
+		if base == nil || (base ?? "").isEmpty {
+			let lpc = download.url.lastPathComponent
+			if !lpc.isEmpty, lpc != "/", lpc.lowercased() != "download" {
+				base = lpc
+			}
+		}
+		guard var name = base, !name.isEmpty else { return nil }
+
+		let ext = (name as NSString).pathExtension.lowercased()
+		let known = ["ipa", "tipa", "zip", "rar", "deb", "bin", "apk", "tar", "gz", "7z"]
+		if ext.isEmpty || !known.contains(ext) {
+			let mime = (http?.mimeType ?? response.mimeType)?.lowercased() ?? ""
+			let mapped = Self._extension(forMIME: mime)
+			if !mapped.isEmpty {
+				let stem = (name as NSString).deletingPathExtension
+				name = stem.isEmpty ? "download.\(mapped)" : "\(stem).\(mapped)"
+			}
+		}
+		// 过滤非法文件名字符（/ \ ? % * | " < > :）
+		let illegal = CharacterSet(charactersIn: "/\\?%*|\"<>:")
+		name = name.components(separatedBy: illegal).joined(separator: "_")
+		return name.isEmpty ? nil : name
+	}
+
+	private static func _filenameFromContentDisposition(_ cd: String) -> String? {
+		// 优先 filename*=UTF-8''xxx（RFC 5987）
+		if let star = cd.range(of: "filename\\*=", options: .regularExpression) {
+			var rest = String(cd[star.upperBound...])
+			rest = rest.components(separatedBy: ";").first ?? rest
+			rest = rest.trimmingCharacters(in: .whitespaces)
+			rest = rest.replacingOccurrences(of: "UTF-8''", with: "", options: .caseInsensitive)
+			rest = rest.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+			if let dec = rest.removingPercentEncoding, !dec.isEmpty { return dec }
+			if !rest.isEmpty { return rest }
+		}
+		// 退而取 filename=
+		if let eq = cd.range(of: "filename=", options: .caseInsensitive) {
+			var rest = String(cd[eq.upperBound...])
+			rest = rest.components(separatedBy: ";").first ?? rest
+			rest = rest.trimmingCharacters(in: .whitespaces)
+			rest = rest.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+			if !rest.isEmpty { return rest }
+		}
+		return nil
+	}
+
+	/// 文件无合适扩展名但实为 ZIP/IPA（PK 头）：重命名为 .zip 以便 Zip 框架解包，
+	/// 返回 true 表示已按压缩包处理（可直接导入）。
+	private func _tryImportAsZip(url: URL, download: Download) -> Bool {
+		guard let fh = try? FileHandle(forReadingFrom: url) else { return false }
+		defer { fh.closeFile() }
+		let magic = fh.readData(ofLength: 4)
+		guard magic.count == 4,
+			  magic[0] == 0x50, magic[1] == 0x4B,
+			  (magic[2] == 0x03 || magic[2] == 0x05 || magic[2] == 0x07),
+			  (magic[3] == 0x04 || magic[3] == 0x06 || magic[3] == 0x08) else {
+			return false
+		}
+		let dir = url.deletingLastPathComponent()
+		let stem = (url.lastPathComponent as NSString).deletingPathExtension
+		let newURL = dir.appendingPathComponent(stem.isEmpty ? "package.zip" : "\(stem).zip")
+		try? FileManager.default.moveItem(at: url, to: newURL)
+		download.destinationURL = newURL
+		download.fileName = newURL.lastPathComponent
+		return true
 	}
 }
