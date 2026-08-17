@@ -42,6 +42,8 @@ class Download: Identifiable, ObservableObject, @unchecked Sendable {
 	let fileName: String
 	let onlyArchiving: Bool
 	var sourceProvenance: SourceAppProvenance?
+	/// 入口标记：manual / browser-navAction / browser-navResponse，便于诊断两条路为何表现不同。
+	var entryPoint: String = "manual"
 	
 	init(
 		id: String,
@@ -97,18 +99,21 @@ class DownloadManager: NSObject, ObservableObject {
 	func startDownload(
 		from url: URL,
 		id: String = UUID().uuidString,
-		sourceProvenance: SourceAppProvenance? = nil
+		sourceProvenance: SourceAppProvenance? = nil,
+		entryPoint: String = "manual"
 	) -> Download {
-		startDownload(from: URLRequest(url: url), id: id, sourceProvenance: sourceProvenance)
+		startDownload(from: URLRequest(url: url), id: id, sourceProvenance: sourceProvenance, entryPoint: entryPoint)
 	}
 	
 	func startDownload(
 		from request: URLRequest,
 		id: String = UUID().uuidString,
-		sourceProvenance: SourceAppProvenance? = nil
+		sourceProvenance: SourceAppProvenance? = nil,
+		entryPoint: String = "manual"
 	) -> Download {
 		let url = request.url ?? URL(string: "about:blank")!
 		let requestHasSourceProvenance = sourceProvenance != nil
+		os_log(.info, log: .zBrowserDownload, "startDownload entry=%{public}@ url=%{public}@", entryPoint, url.absoluteString)
 		if let existingDownload = downloads.first(where: {
 			$0.url == url && ($0.sourceProvenance != nil) == requestHasSourceProvenance
 		}) {
@@ -117,6 +122,7 @@ class DownloadManager: NSObject, ObservableObject {
 		}
 		
 		let download = Download(id: id, url: url, sourceProvenance: sourceProvenance)
+		download.entryPoint = entryPoint
 		let destination = _uniqueDownloadURL(for: download.fileName)
 		download.destinationURL = destination
 		
@@ -375,19 +381,53 @@ extension DownloadManager: URLSessionDataDelegate {
 		}
 		let http = response as? HTTPURLResponse
 		let isResume = (http?.statusCode == 206) && download.bytesReceived > 0
-		os_log(.info, log: .zBrowserDownload, "didReceiveResponse status=%d resume=%{public}@", http?.statusCode ?? -1, isResume ? "yes" : "no")
+		os_log(.info, log: .zBrowserDownload, "didReceiveResponse entry=%{public}@ status=%d resume=%{public}@ expected=%lld",
+			   download.entryPoint, http?.statusCode ?? -1, isResume ? "yes" : "no", response.expectedContentLength)
 
-		let remaining = response.expectedContentLength
+		// 总大小来源优先级：expectedContentLength → Content-Length 头 → Content-Range 的总大小。
+		// 某些服务器对带浏览器头的请求走分块/压缩而不给 Content-Length，这里尽量从响应头兜底取到总大小。
+		var total: Int64 = 0
+		let raw = response.expectedContentLength
+		if raw > 0 {
+			total = raw
+		} else if let http {
+			if let cl = (http.allHeaderFields["Content-Length"] as? String)?.trimmingCharacters(in: .whitespaces),
+			   let v = Int64(cl), v > 0 {
+				total = v
+			} else if let cr = (http.allHeaderFields["Content-Range"] as? String)?.trimmingCharacters(in: .whitespaces) {
+				let parts = cr.components(separatedBy: "/")
+				if parts.count == 2, let v = Int64(parts[1].trimmingCharacters(in: .whitespaces)), v > 0 {
+					total = v
+				}
+			}
+		}
 		DispatchQueue.main.async {
 			if isResume {
-				// 206：expectedContentLength 为剩余字节，总大小 = 已下 + 剩余
-				if remaining > 0 { download.totalBytes = download.bytesReceived + remaining }
+				// 206：total 为剩余字节，总大小 = 已下 + 剩余
+				if total > 0 { download.totalBytes = download.bytesReceived + total }
 				download.bytesDownloaded = download.bytesReceived
 			} else {
-				download.totalBytes = max(0, remaining)
+				download.totalBytes = max(0, total)
 				download.bytesDownloaded = 0
 				download.bytesReceived = 0
 			}
+		}
+		// 兜底：GET 未给总大小（分块/压缩）时，发 HEAD 探测 Content-Length。
+		// 对浏览器与 +链接 两条路一视同仁，能补回「总大小/进度百分比」。
+		if total <= 0 {
+			var headReq = URLRequest(url: download.url)
+			headReq.httpMethod = "HEAD"
+			_session.dataTask(with: headReq) { _, resp, _ in
+				guard let h = resp as? HTTPURLResponse,
+					  let cl = (h.allHeaderFields["Content-Length"] as? String)?.trimmingCharacters(in: .whitespaces),
+					  let v = Int64(cl), v > 0 else { return }
+				DispatchQueue.main.async {
+					if download.state == .downloading && download.totalBytes <= 0 {
+						download.totalBytes = v
+						os_log(.info, log: .zBrowserDownload, "headProbe entry=%{public}@ total=%lld", download.entryPoint, v)
+					}
+				}
+			}.resume()
 		}
 		if let url = download.destinationURL,
 		   let handle = try? FileHandle(forWritingTo: url) {

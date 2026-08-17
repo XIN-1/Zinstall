@@ -434,7 +434,7 @@ private struct BrowserView: UIViewRepresentable {
 					isDl = Self.isDownloadable(url)
 				}
 				if isDl {
-					DownloadManager.shared.startDownload(from: navigationAction.request)
+					DownloadManager.shared.startDownload(from: URLRequest(url: url), entryPoint: "browser-navAction")
 					NotificationCenter.default.post(name: .zDownloadStarted, object: url)
 					decisionHandler(.cancel)
 				} else {
@@ -454,7 +454,7 @@ private struct BrowserView: UIViewRepresentable {
 			   url.absoluteString, Self.isDownloadable(url) ? "yes" : "no", shouldDownload ? 1 : 0)
 
 		if shouldDownload {
-			DownloadManager.shared.startDownload(from: navigationAction.request)
+			DownloadManager.shared.startDownload(from: URLRequest(url: url), entryPoint: "browser-navAction")
 			NotificationCenter.default.post(name: .zDownloadStarted, object: url)
 			decisionHandler(.cancel)
 		} else {
@@ -504,7 +504,7 @@ private struct BrowserView: UIViewRepresentable {
 
 		let dlURL = response.url ?? URL(string: "about:blank")!
 		if shouldDownload {
-			DownloadManager.shared.startDownload(from: URLRequest(url: dlURL))
+			DownloadManager.shared.startDownload(from: URLRequest(url: dlURL), entryPoint: "browser-navResponse")
 			NotificationCenter.default.post(name: .zDownloadStarted, object: dlURL)
 			decisionHandler(.cancel)
 		} else {
