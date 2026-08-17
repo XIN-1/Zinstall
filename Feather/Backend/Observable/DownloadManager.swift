@@ -129,7 +129,9 @@ class DownloadManager: NSObject, ObservableObject {
 		task.resume()
 		downloads.append(download)
 		_ensureProgressTimer()
-		_startBackground(for: download)
+		#if !targetEnvironment(macCatalyst)
+		_updateBackgroundAudioState()
+		#endif
 		
 		return download
 	}
