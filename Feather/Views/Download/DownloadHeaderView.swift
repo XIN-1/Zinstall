@@ -45,11 +45,11 @@ struct DownloadItemView: View {
 	/// （原用 let + @State + .onReceive 间接刷新，高频数据回调下不可靠，百分比会卡住）。
 	@ObservedObject var download: Download
 
-	/// 综合进度：普通下载=0.7×下载 + 0.3×解包；仅解包=解包进度。
+	/// 综合进度：普通下载直接取下载进度（0→1，进度条完整填满）；仅解包=解包进度。
 	private var overallProgress: Double {
 		download.onlyArchiving
 			? download.unpackageProgress
-			: (0.3 * download.unpackageProgress) + (0.7 * download.progress)
+			: download.progress
 	}
 
 	/// 服务器未返回总大小（分块传输 / 无 Content-Length）时为 true，

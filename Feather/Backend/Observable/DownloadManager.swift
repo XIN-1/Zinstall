@@ -69,6 +69,9 @@ class DownloadManager: NSObject, ObservableObject {
 	}
 	
 	private var _session: URLSession!
+	/// 进度采样定时器：每 0.2s 读取各进行中下载的目标文件实际大小，
+	/// 直接驱动 bytesDownloaded / progress，保证 UI 实时刷新（不依赖 WKDownload 回调频率）。
+	private var _progressTimer: Timer?
 	
 	#if !targetEnvironment(macCatalyst)
 	private func _updateBackgroundAudioState() {
@@ -114,6 +117,7 @@ class DownloadManager: NSObject, ObservableObject {
 		download.task = task
 		task.resume()
 		downloads.append(download)
+		_ensureProgressTimer()
 		
 		#if !targetEnvironment(macCatalyst)
 		if #available(iOS 26.0, *) {
@@ -160,6 +164,7 @@ class DownloadManager: NSObject, ObservableObject {
 		download.task = task
 		download.state = .downloading
 		task.resume()
+		_ensureProgressTimer()
 		#if !targetEnvironment(macCatalyst)
 		_updateBackgroundAudioState()
 		#endif
@@ -218,6 +223,46 @@ class DownloadManager: NSObject, ObservableObject {
 		_handleLock.lock()
 		if let h = _fileHandles[id] { h.closeFile(); _fileHandles[id] = nil }
 		_handleLock.unlock()
+	}
+
+	// MARK: - 进度实时采样
+	/// 启动进度采样定时器（主线程运行，避免后台线程改 @Published 不刷新 UI）。
+	private func _ensureProgressTimer() {
+		if _progressTimer != nil { return }
+		DispatchQueue.main.async { [weak self] in
+			guard let self, self._progressTimer == nil else { return }
+			let timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+				self?._sampleActiveDownloads()
+			}
+			RunLoop.main.add(timer, forMode: .common)
+			self._progressTimer = timer
+		}
+	}
+
+	/// 读取进行中下载的目标文件真实大小，更新进度；若总大小已知则算出百分比，
+	/// 否则仅更新已下载字节数（视图显示「下载中」+ 已下载字节）。
+	private func _sampleActiveDownloads() {
+		var anyActive = false
+		var changed = false
+		for dl in downloads where dl.state == .downloading {
+			anyActive = true
+			guard let dest = dl.destinationURL else { continue }
+			let size = (try? FileManager.default.attributesOfItem(atPath: dest.path)[.size] as? NSNumber)?.int64Value ?? 0
+			if size != dl.bytesDownloaded {
+				dl.bytesDownloaded = size
+				dl.bytesReceived = size
+				if dl.totalBytes > 0 {
+					dl.progress = min(1.0, Double(size) / Double(dl.totalBytes))
+				}
+				changed = true
+			}
+		}
+		// 强制列表整体重渲染，兜底第三方列表组件不响应子项 @ObservedObject 的情况
+		if changed { self.objectWillChange.send() }
+		if !anyActive {
+			_progressTimer?.invalidate()
+			_progressTimer = nil
+		}
 	}
 	
 	private func _removeDownload(_ download: Download) {
@@ -308,7 +353,7 @@ extension DownloadManager: URLSessionDataDelegate {
 				if remaining > 0 { download.totalBytes = download.bytesReceived + remaining }
 				download.bytesDownloaded = download.bytesReceived
 			} else {
-				download.totalBytes = remaining
+				download.totalBytes = max(0, remaining)
 				download.bytesDownloaded = 0
 				download.bytesReceived = 0
 			}
@@ -403,6 +448,7 @@ extension DownloadManager: WKDownloadDelegate {
 
 		DispatchQueue.main.async {
 			self.downloads.append(dl)
+			self._ensureProgressTimer()
 			#if !targetEnvironment(macCatalyst)
 			if #available(iOS 26.0, *) {
 				BackgroundTaskManager.shared.startTask(for: dl.id, filename: dl.fileName)
@@ -421,7 +467,7 @@ extension DownloadManager: WKDownloadDelegate {
 		DispatchQueue.main.async {
 			dl.bytesDownloaded = totalBytesWritten
 			dl.bytesReceived = totalBytesWritten   // 供断点续传计算 Range 偏移
-			dl.totalBytes = totalBytesExpected
+			dl.totalBytes = max(0, totalBytesExpected)
 			dl.progress = totalBytesExpected > 0 ? Double(totalBytesWritten) / Double(totalBytesExpected) : progress
 			#if !targetEnvironment(macCatalyst)
 			if #available(iOS 26.0, *) {
