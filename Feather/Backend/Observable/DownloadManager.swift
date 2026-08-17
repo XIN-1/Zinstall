@@ -40,7 +40,7 @@ class Download: Identifiable, ObservableObject, @unchecked Sendable {
 	
 	let id: String
 	let url: URL
-	let fileName: String
+	@Published var fileName: String
 	let onlyArchiving: Bool
 	var sourceProvenance: SourceAppProvenance?
 	/// 入口标记：manual / browser-navAction / browser-navResponse，便于诊断两条路为何表现不同。
