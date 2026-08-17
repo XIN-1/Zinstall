@@ -41,27 +41,48 @@ struct DownloadHeaderView: View {
 }
 
 struct DownloadItemView: View {
-	let download: Download
-	@State private var progress: Double = 0
-	@State private var bytesDownloaded: Int64 = 0
-	@State private var totalBytes: Int64 = 0
-	@State private var unpackageProgress: Double = 0
-	
+	/// 直接订阅 Download 的 @Published，保证进度/字节数实时驱动 UI 刷新
+	/// （原用 let + @State + .onReceive 间接刷新，高频数据回调下不可靠，百分比会卡住）。
+	@ObservedObject var download: Download
+
+	/// 综合进度：普通下载=0.7×下载 + 0.3×解包；仅解包=解包进度。
+	private var overallProgress: Double {
+		download.onlyArchiving
+			? download.unpackageProgress
+			: (0.3 * download.unpackageProgress) + (0.7 * download.progress)
+	}
+
+	/// 服务器未返回总大小（分块传输 / 无 Content-Length）时为 true，
+	/// 此时进度未知，改用不确定进度环 + 「下载中」，避免卡在 0%。
+	private var isIndeterminate: Bool { download.totalBytes <= 0 }
+
 	var body: some View {
 		VStack(alignment: .leading, spacing: 4) {
 			Text(download.fileName)
 				.font(.subheadline)
 				.lineLimit(1)
-			
-			ProgressView(value: overallProgress)
-				.progressViewStyle(.linear)
-			
+
+			if isIndeterminate {
+				ProgressView()
+					.progressViewStyle(.linear)
+			} else {
+				ProgressView(value: overallProgress)
+					.progressViewStyle(.linear)
+			}
+
 			HStack {
-				Text(verbatim: "\(Int(overallProgress * 100))%")
-					.contentTransition(.numericText())
+				if isIndeterminate {
+					Text(verbatim: "下载中")
+				} else {
+					Text(verbatim: "\(Int(overallProgress * 100))%")
+						.contentTransition(.numericText())
+				}
 				Spacer()
-				if totalBytes > 0 {
-					Text(verbatim: "\($bytesDownloaded.wrappedValue.formattedByteCount) / \(totalBytes.formattedByteCount)")
+				if isIndeterminate {
+					Text(verbatim: download.bytesDownloaded.formattedByteCount)
+						.contentTransition(.numericText())
+				} else {
+					Text(verbatim: "\(download.bytesDownloaded.formattedByteCount) / \(download.totalBytes.formattedByteCount)")
 						.contentTransition(.numericText())
 				}
 			}
@@ -69,15 +90,5 @@ struct DownloadItemView: View {
 			.foregroundColor(.secondary)
 		}
 		.padding(.vertical, 4)
-		.onReceive(download.$progress) { self.progress = $0 }
-		.onReceive(download.$bytesDownloaded) { self.bytesDownloaded = $0 }
-		.onReceive(download.$totalBytes) { self.totalBytes = $0 }
-		.onReceive(download.$unpackageProgress) { self.unpackageProgress = $0 }
-	}
-	
-	private var overallProgress: Double {
-		download.onlyArchiving
-			? unpackageProgress
-			: (0.3 * unpackageProgress) + (0.7 * progress)
 	}
 }
