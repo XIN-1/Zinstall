@@ -14,9 +14,9 @@ import CoreData
 struct ResetView: View {
 	// MARK: Body
 	var body: some View {
-		NBList(.localized("Reset")) {
+		NBList("重置") {
 			_cache()
-			_coredata()
+			_data()
 			_all()
 		}
 	}
@@ -35,7 +35,7 @@ struct ResetView: View {
 		action: @escaping () -> Void
 	) {
 		let action = UIAlertAction(
-			title: .localized("Proceed"),
+			title: "继续",
 			style: .destructive
 		) { _ in
 			action()
@@ -48,8 +48,8 @@ struct ResetView: View {
 		
 		var msg = ""
 		if !message.isEmpty { msg = message + "\n" }
-		msg.append(.localized("This action cannot be undone. Would you like to proceed?"))
-	
+		msg.append("此操作不可撤销，确定继续吗？")
+
 		UIAlertController.showAlertWithCancel(
 			title: title,
 			message: msg,
@@ -63,60 +63,48 @@ struct ResetView: View {
 extension ResetView {
 	@ViewBuilder
 	private func _cache() -> some View {
-		Section {
-			Button(.localized("Reset Work Cache"), systemImage: "xmark.rectangle.portrait") {
-				Self.resetAlert(title: .localized("Reset Work Cache")) {
+		Section("缓存清理") {
+			Button("清除工作缓存", systemImage: "xmark.rectangle.portrait") {
+				Self.resetAlert(title: "清除工作缓存") {
 					Self.clearWorkCache()
 				}
 			}
 			
-			Button(.localized("Reset Network Cache"), systemImage: "xmark.rectangle.portrait") {
+			Button("清除网络缓存", systemImage: "xmark.rectangle.portrait") {
 				Self.resetAlert(
-					title: .localized("Reset Network Cache"),
+					title: "清除网络缓存",
 					message: _cacheSize()
 				) {
 					Self.clearNetworkCache()
+				}
+			}
+			
+			Button("清除下载缓存", systemImage: "tray.circle") {
+				Self.resetAlert(title: "清除下载缓存") {
+					Self.clearDownloadCache()
 				}
 			}
 		}
 	}
 	
 	@ViewBuilder
-	private func _coredata() -> some View {
-		Section {
-			Button(.localized("Reset Sources"), systemImage: "xmark.circle") {
+	private func _data() -> some View {
+		Section("数据清理") {
+			Button("清除资源库", systemImage: "xmark.circle") {
 				Self.resetAlert(
-					title: .localized("Reset Signed Apps"),
-					message: Storage.shared.countContent(for: AltSource.self)
-				) {
-					Self.resetSources()
-				}
-			}
-			
-			Button(.localized("Reset Signed Apps"), systemImage: "xmark.circle") {
-				Self.resetAlert(
-					title: .localized("Reset Signed Apps"),
-					message: Storage.shared.countContent(for: Signed.self)
-				) {
-					Self.deleteSignedApps()
-				}
-			}
-			
-			Button(.localized("Reset Imported Apps"), systemImage: "xmark.circle") {
-				Self.resetAlert(
-					title: .localized("Reset Imported Apps"),
+					title: "清除资源库",
 					message: Storage.shared.countContent(for: Imported.self)
 				) {
 					Self.deleteImportedApps()
 				}
 			}
 			
-			Button(.localized("Reset Certificates"), systemImage: "xmark.circle") {
+			Button("清除源", systemImage: "xmark.circle") {
 				Self.resetAlert(
-					title: .localized("Reset Certificates"),
-					message: Storage.shared.countContent(for: CertificatePair.self)
+					title: "清除源",
+					message: Storage.shared.countContent(for: AltSource.self)
 				) {
-					Self.resetCertificates()
+					Self.resetSources()
 				}
 			}
 		}
@@ -124,15 +112,15 @@ extension ResetView {
 	
 	@ViewBuilder
 	private func _all() -> some View {
-		Section {
-			Button(.localized("Reset Settings"), systemImage: "xmark.octagon") {
-				Self.resetAlert(title: .localized("Reset Settings")) {
+		Section("全部重置") {
+			Button("重置设置", systemImage: "xmark.octagon") {
+				Self.resetAlert(title: "重置设置") {
 					Self.resetUserDefaults()
 				}
 			}
 			
-			Button(.localized("Reset All"), systemImage: "xmark.octagon") {
-				Self.resetAlert(title: .localized("Reset All")) {
+			Button("重置全部", systemImage: "xmark.octagon") {
+				Self.resetAlert(title: "重置全部") {
 					Self.resetAll()
 				}
 			}
@@ -152,8 +140,8 @@ extension ResetView {
 				try? fileManager.removeItem(atPath: tmpDirectory.appendingPathComponent(file).path())
 			}
 		}
-		// ✅ 清理应用目录根里的临时工作目录（Documents/FeatherImport_*、FeatherInstall_*、FeatherTweak_*）
-		// 只删带 `Feather` 前缀的项，绝不误删用户下载的 IPA/zip 与 Archives/Signed/Staging/Certificates
+		// 清理应用目录根里的临时工作目录（Documents/FeatherImport_*、FeatherInstall_*、FeatherTweak_*）
+		// 只删带 `Feather` 前缀的项，绝不误删用户下载的 IPA/zip 与 Archives/Staging/Certificates
 		let prefixes = ["FeatherImport_", "FeatherInstall_", "FeatherTweak_"]
 		let root = URL.documentsDirectory
 		if let files = try? fileManager.contentsOfDirectory(atPath: root.path()) {
@@ -176,26 +164,31 @@ extension ResetView {
 		}
 	}
 	
-	static func resetSources() {
-		Storage.shared.clearContext(request: AltSource.fetchRequest())
+	static func clearDownloadCache() {
+		let dm = DownloadManager.shared
+		// 1) 先取消所有未完成的下载任务（清理 Downloads/ 下的半成品）
+		for d in dm.downloads where d.state != .completed {
+			dm.cancelDownload(d)
+		}
+		// 2) 清空内存下载列表
+		dm.downloads.removeAll()
+		// 3) 删除 Downloads/ 子目录下所有文件（App 自管区，绝不碰 Documents 根的用户文件）
+		let dir = FileManager.default.downloadsDir
+		if let files = try? FileManager.default.contentsOfDirectory(atPath: dir.path()) {
+			for f in files {
+				try? FileManager.default.removeItem(atPath: dir.appendingPathComponent(f).path())
+			}
+		}
 	}
 	
-	static func deleteSignedApps() {
-		Storage.shared.deleteSourceMetadata(kind: .signed)
-		Storage.shared.clearContext(request: Signed.fetchRequest())
-		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.signed)
+	static func resetSources() {
+		Storage.shared.clearContext(request: AltSource.fetchRequest())
 	}
 	
 	static func deleteImportedApps() {
 		Storage.shared.deleteSourceMetadata(kind: .imported)
 		Storage.shared.clearContext(request: Imported.fetchRequest())
 		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.staging)
-	}
-	
-	static func resetCertificates(resetAll: Bool = false) {
-		if !resetAll { UserDefaults.standard.set(0, forKey: "feather.selectedCert") }
-		Storage.shared.clearContext(request: CertificatePair.fetchRequest())
-		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.certificates)
 	}
 	
 	static func resetUserDefaults() {
@@ -205,10 +198,9 @@ extension ResetView {
 	static func resetAll() {
 		clearWorkCache()
 		clearNetworkCache()
+		clearDownloadCache()
 		resetSources()
-		deleteSignedApps()
 		deleteImportedApps()
-		resetCertificates(resetAll: true)
 		resetUserDefaults()
 	}
 }

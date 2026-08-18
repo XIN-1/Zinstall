@@ -382,7 +382,8 @@ extension DownloadManager: URLSessionDataDelegate {
 					self._updateBackgroundAudioState()
 					#endif
 				} else {
-					// 导入成功：移出下载列表（已写入资源库 Imported）
+					// 导入成功：删除 Downloads/ 内的源副本（url 始终位于 downloadsDir 自管区，绝不误删用户手动文件），再移出列表
+					try? FileManager.default.removeFileIfNeeded(at: url)
 					DownloadManager.shared.downloads.remove(at: index)
 					#if !targetEnvironment(macCatalyst)
 					if #available(iOS 26.0, *) {

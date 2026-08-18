@@ -47,8 +47,8 @@ extension FileManager {
 	/// zinstall 应用目录 = App 的 Documents 沙盒，在「文件」App 中显示为 "Z install"
 	var appDirectory: URL { URL.documentsDirectory }
 
-	/// 下载/导入的最终文件直接平铺在应用目录根（即 Documents/<name>），用户可见
-	var downloadsDir: URL { URL.documentsDirectory }
+	/// 下载/导入的临时加工文件统一存放于 Downloads/ 子目录（App 自管区），与用户手动放入 Documents 根的文件隔离，便于精准清理
+	var downloadsDir: URL { URL.documentsDirectory.appendingPathComponent("Downloads") }
 
 	func downloads(_ name: String) -> URL { URL.documentsDirectory.appendingPathComponent(name) }
 
@@ -68,7 +68,7 @@ extension FileManager {
 	/// 启动时调用：确保已知大目录存在并排除 iCloud 备份。
 	/// 下载文件 / 临时工作目录在创建时各自调用 `excludeFromBackup(_:)`，故此处无需再处理。
 	func ensureZInstallDirs() {
-		for dir in [archives, signed, staging, certificates] {
+		for dir in [archives, staging, certificates, downloads] {
 			try? createDirectoryIfNeeded(at: dir)
 			excludeFromBackup(dir)
 		}
