@@ -23,14 +23,14 @@ extension FileManager {
 		signed.appendingPathComponent(uuid)
 	}
 	
-	/// Gives apps Unsigned directory
-	var unsigned: URL {
-		URL.documentsDirectory.appendingPathComponent("Unsigned")
+	/// Gives apps Staging (import temp) directory
+	var staging: URL {
+		URL.documentsDirectory.appendingPathComponent("Staging")
 	}
 	
-	/// Gives apps Unsigned directory with a UUID appending path
-	func unsigned(_ uuid: String) -> URL {
-		unsigned.appendingPathComponent(uuid)
+	/// Gives apps Staging (import temp) directory with a UUID appending path
+	func staging(_ uuid: String) -> URL {
+		staging.appendingPathComponent(uuid)
 	}
 	
 	/// Gives apps Certificates directory
@@ -68,9 +68,17 @@ extension FileManager {
 	/// 启动时调用：确保已知大目录存在并排除 iCloud 备份。
 	/// 下载文件 / 临时工作目录在创建时各自调用 `excludeFromBackup(_:)`，故此处无需再处理。
 	func ensureZInstallDirs() {
-		for dir in [archives, signed, unsigned, certificates] {
+		for dir in [archives, signed, staging, certificates] {
 			try? createDirectoryIfNeeded(at: dir)
 			excludeFromBackup(dir)
+		}
+		
+		// 迁移：旧版命名 "Unsigned" → "Staging"，保留任何进行中的导入内容
+		let oldUnsigned = URL.documentsDirectory.appendingPathComponent("Unsigned")
+		let newStaging = staging
+		if FileManager.default.fileExists(atPath: oldUnsigned.path),
+		   !FileManager.default.fileExists(atPath: newStaging.path) {
+			try? FileManager.default.moveItem(at: oldUnsigned, to: newStaging)
 		}
 	}
 }

@@ -133,8 +133,8 @@ final class AppFileHandler: NSObject, @unchecked Sendable {
 	}
 	
 	private func _directory() async throws -> URL {
-		// Documents/Feather/Unsigned/\(UUID)
-		_fileManager.unsigned(_uuid)
+		// Documents/Staging/\(UUID)
+		_fileManager.staging(_uuid)
 	}
 	
 	func clean() async throws {

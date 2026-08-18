@@ -59,8 +59,6 @@ struct Options: Codable, Equatable {
 	var appAppearance: AppAppearance
 	/// App minimum iOS requirement (i.e. iOS 11.0)
 	var minimumAppRequirement: MinimumAppRequirement
-	/// Signing options
-	var signingOption: SigningOption
 	
 	// MARK: Options
 	
@@ -125,7 +123,6 @@ struct Options: Codable, Equatable {
 		
 		appAppearance: .default,
 		minimumAppRequirement: .default,
-		signingOption: .default,
 		
 		// MARK: Options
 		
@@ -193,20 +190,6 @@ struct Options: Codable, Equatable {
 			case .v14: "14.0"
 			case .v13: "13.0"
 			case .v12: "12.0"
-			}
-		}
-	}
-	
-	enum SigningOption: String, Codable, CaseIterable, LocalizedDescribable {
-		case `default`
-		case onlyModify
-//		case adhoc
-
-		var localizedDescription: String {
-			switch self {
-			case .default: .localized("Default")
-			case .onlyModify: .localized("Modify")
-//			case .adhoc: .localized("Ad-hoc")
 			}
 		}
 	}

@@ -10,6 +10,13 @@ import Foundation
 import SWCompression
 import Compression
 
+enum TweakHandlerError: Error {
+	case unsupportedFileExtension(String)
+	case decompressionFailed(String)
+	case missingFile(String)
+	case noAccess
+}
+
 func extractFile(at fileURL: inout URL) throws {
 	let fileExtension = fileURL.pathExtension.lowercased()
 	let fileManager = FileManager.default

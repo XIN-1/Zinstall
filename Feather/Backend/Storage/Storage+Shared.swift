@@ -13,7 +13,7 @@ extension Storage {
 		guard let uuid = app.uuid else { return nil }
 		return app.isSigned
 			? FileManager.default.signed(uuid)
-			: FileManager.default.unsigned(uuid)
+			: FileManager.default.staging(uuid)
 	}
 	
 	func getAppDirectory(for app: AppInfoPresentable) -> URL? {
@@ -34,12 +34,6 @@ extension Storage {
 		}
 	}
 	
-	func getCertificate(from app: AppInfoPresentable) -> CertificatePair? {
-		if let signed = app as? Signed {
-			return signed.certificate
-		}
-		return nil
-	}
 }
 
 // MARK: - Helpers

@@ -83,7 +83,7 @@ final class Storage: ObservableObject {
 		}
 		
 		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.signed)
-		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.unsigned)
+		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.staging)
 		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.certificates)
 		UserDefaults.standard.set(0, forKey: "feather.selectedCert")
 	}

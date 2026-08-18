@@ -153,7 +153,7 @@ extension ResetView {
 			}
 		}
 		// ✅ 清理应用目录根里的临时工作目录（Documents/FeatherImport_*、FeatherInstall_*、FeatherTweak_*）
-		// 只删带 `Feather` 前缀的项，绝不误删用户下载的 IPA/zip 与 Archives/Signed/Unsigned/Certificates
+		// 只删带 `Feather` 前缀的项，绝不误删用户下载的 IPA/zip 与 Archives/Signed/Staging/Certificates
 		let prefixes = ["FeatherImport_", "FeatherInstall_", "FeatherTweak_"]
 		let root = URL.documentsDirectory
 		if let files = try? fileManager.contentsOfDirectory(atPath: root.path()) {
@@ -189,7 +189,7 @@ extension ResetView {
 	static func deleteImportedApps() {
 		Storage.shared.deleteSourceMetadata(kind: .imported)
 		Storage.shared.clearContext(request: Imported.fetchRequest())
-		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.unsigned)
+		try? FileManager.default.removeFileIfNeeded(at: FileManager.default.staging)
 	}
 	
 	static func resetCertificates(resetAll: Bool = false) {

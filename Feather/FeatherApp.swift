@@ -112,7 +112,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 			fileManager.archives,
 			fileManager.certificates,
 			fileManager.signed,
-			fileManager.unsigned
+			fileManager.staging
 		]
 		
 		for url in directories {
