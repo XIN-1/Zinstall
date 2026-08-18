@@ -68,7 +68,7 @@ extension FileManager {
 	/// 启动时调用：确保已知大目录存在并排除 iCloud 备份。
 	/// 下载文件 / 临时工作目录在创建时各自调用 `excludeFromBackup(_:)`，故此处无需再处理。
 	func ensureZInstallDirs() {
-		for dir in [archives, staging, certificates, downloads] {
+		for dir in [archives, staging, certificates, downloadsDir] {
 			try? createDirectoryIfNeeded(at: dir)
 			excludeFromBackup(dir)
 		}
